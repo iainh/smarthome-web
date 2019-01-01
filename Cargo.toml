@@ -1,0 +1,7 @@
+[package]
+name = "tddp-client"
+version = "0.1.0"
+authors = ["Iain H <iain@spiralpoint.org>"]
+edition = "2018"
+
+[dependencies]
