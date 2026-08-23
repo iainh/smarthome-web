@@ -1,5 +1,6 @@
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
 use std::convert::TryFrom;
 use std::error::Error as StdError;
 use std::fmt;
@@ -111,6 +112,98 @@ pub struct MonthlyEnergy {
     pub energy_kwh: f64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuleSet<T> {
+    pub enabled: bool,
+    pub version: Option<u8>,
+    pub rules: Vec<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CountdownRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub name: String,
+    #[serde(rename = "enable", with = "bool_u8")]
+    pub enabled: bool,
+    pub delay: u64,
+    #[serde(rename = "act", with = "bool_u8")]
+    pub turn_on: bool,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScheduleRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub name: String,
+    #[serde(rename = "enable", with = "bool_u8")]
+    pub enabled: bool,
+    #[serde(with = "bool_u8")]
+    pub repeat: bool,
+    #[serde(rename = "wday", with = "weekday_array")]
+    pub weekdays: [bool; 7],
+    pub stime_opt: i8,
+    pub smin: u16,
+    pub sact: i8,
+    pub etime_opt: i8,
+    pub emin: u16,
+    pub eact: i8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soffset: Option<i16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eoffset: Option<i16>,
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub force: u8,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AntiTheftRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub name: String,
+    #[serde(rename = "enable", with = "bool_u8")]
+    pub enabled: bool,
+    #[serde(with = "bool_u8")]
+    pub repeat: bool,
+    #[serde(rename = "wday", with = "weekday_array")]
+    pub weekdays: [bool; 7],
+    pub stime_opt: i8,
+    pub smin: u16,
+    pub etime_opt: i8,
+    pub emin: u16,
+    pub frequency: u16,
+    pub duration: u16,
+    pub lastfor: u16,
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub force: u8,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct NextAction {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub action: Option<i8>,
+    #[serde(default, rename = "schd_time")]
+    pub scheduled_seconds: Option<u64>,
+    #[serde(rename = "type")]
+    pub action_type: i8,
+}
+
 #[derive(Debug, Clone)]
 pub struct SmartHomeClient {
     timeout: Duration,
@@ -176,6 +269,14 @@ struct MonthStatistic {
     month: u8,
     energy: Option<f64>,
     energy_wh: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct RulesResponse<T> {
+    #[serde(default)]
+    enable: u8,
+    version: Option<u8>,
+    rule_list: Vec<T>,
 }
 
 impl SmartHomeClient {
@@ -302,6 +403,152 @@ impl SmartHomeClient {
     /// Permanently erases the device's stored energy history.
     pub fn erase_energy_statistics(&self, address: IpAddr) -> Result<()> {
         self.query_command(address, "emeter", "erase_emeter_stat", json!({}))?;
+        Ok(())
+    }
+
+    pub fn get_countdown_rules(&self, address: IpAddr) -> Result<RuleSet<CountdownRule>> {
+        self.get_rules(address, "count_down")
+    }
+
+    pub fn add_countdown_rule(
+        &self,
+        address: IpAddr,
+        rule: &CountdownRule,
+    ) -> Result<Option<String>> {
+        self.add_rule(address, "count_down", rule)
+    }
+
+    pub fn edit_countdown_rule(&self, address: IpAddr, rule: &CountdownRule) -> Result<()> {
+        require_rule_id(&rule.id)?;
+        self.edit_rule(address, "count_down", rule)
+    }
+
+    pub fn delete_countdown_rule(&self, address: IpAddr, id: &str) -> Result<()> {
+        self.delete_rule(address, "count_down", id)
+    }
+
+    pub fn delete_all_countdown_rules(&self, address: IpAddr) -> Result<()> {
+        self.delete_all_rules(address, "count_down")
+    }
+
+    pub fn get_schedule_rules(&self, address: IpAddr) -> Result<RuleSet<ScheduleRule>> {
+        self.get_rules(address, "schedule")
+    }
+
+    pub fn add_schedule_rule(
+        &self,
+        address: IpAddr,
+        rule: &ScheduleRule,
+    ) -> Result<Option<String>> {
+        self.add_rule(address, "schedule", rule)
+    }
+
+    pub fn edit_schedule_rule(&self, address: IpAddr, rule: &ScheduleRule) -> Result<()> {
+        require_rule_id(&rule.id)?;
+        self.edit_rule(address, "schedule", rule)
+    }
+
+    pub fn delete_schedule_rule(&self, address: IpAddr, id: &str) -> Result<()> {
+        self.delete_rule(address, "schedule", id)
+    }
+
+    pub fn delete_all_schedule_rules(&self, address: IpAddr) -> Result<()> {
+        self.delete_all_rules(address, "schedule")
+    }
+
+    pub fn set_schedules_enabled(&self, address: IpAddr, enabled: bool) -> Result<()> {
+        self.set_rules_enabled(address, "schedule", enabled)
+    }
+
+    pub fn get_next_schedule_action(&self, address: IpAddr) -> Result<NextAction> {
+        let response = self.query_command(address, "schedule", "get_next_action", json!({}))?;
+        Ok(serde_json::from_value(response)?)
+    }
+
+    /// Permanently erases schedule runtime statistics.
+    pub fn erase_schedule_runtime_statistics(&self, address: IpAddr) -> Result<()> {
+        self.query_command(address, "schedule", "erase_runtime_stat", json!({}))?;
+        Ok(())
+    }
+
+    pub fn get_anti_theft_rules(&self, address: IpAddr) -> Result<RuleSet<AntiTheftRule>> {
+        self.get_rules(address, "anti_theft")
+    }
+
+    pub fn add_anti_theft_rule(
+        &self,
+        address: IpAddr,
+        rule: &AntiTheftRule,
+    ) -> Result<Option<String>> {
+        self.add_rule(address, "anti_theft", rule)
+    }
+
+    pub fn edit_anti_theft_rule(&self, address: IpAddr, rule: &AntiTheftRule) -> Result<()> {
+        require_rule_id(&rule.id)?;
+        self.edit_rule(address, "anti_theft", rule)
+    }
+
+    pub fn delete_anti_theft_rule(&self, address: IpAddr, id: &str) -> Result<()> {
+        self.delete_rule(address, "anti_theft", id)
+    }
+
+    pub fn delete_all_anti_theft_rules(&self, address: IpAddr) -> Result<()> {
+        self.delete_all_rules(address, "anti_theft")
+    }
+
+    pub fn set_anti_theft_enabled(&self, address: IpAddr, enabled: bool) -> Result<()> {
+        self.set_rules_enabled(address, "anti_theft", enabled)
+    }
+
+    fn get_rules<T: DeserializeOwned>(&self, address: IpAddr, module: &str) -> Result<RuleSet<T>> {
+        let response = self.query_command(address, module, "get_rules", json!({}))?;
+        let response: RulesResponse<T> = serde_json::from_value(response)?;
+        Ok(RuleSet {
+            enabled: response.enable != 0,
+            version: response.version,
+            rules: response.rule_list,
+        })
+    }
+
+    fn add_rule<T: Serialize>(
+        &self,
+        address: IpAddr,
+        module: &str,
+        rule: &T,
+    ) -> Result<Option<String>> {
+        let response =
+            self.query_command(address, module, "add_rule", serde_json::to_value(rule)?)?;
+        Ok(response
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_owned))
+    }
+
+    fn edit_rule<T: Serialize>(&self, address: IpAddr, module: &str, rule: &T) -> Result<()> {
+        self.query_command(address, module, "edit_rule", serde_json::to_value(rule)?)?;
+        Ok(())
+    }
+
+    fn delete_rule(&self, address: IpAddr, module: &str, id: &str) -> Result<()> {
+        if id.is_empty() {
+            return Err(Error::InvalidInput("rule ID cannot be empty".to_owned()));
+        }
+        self.query_command(address, module, "delete_rule", json!({ "id": id }))?;
+        Ok(())
+    }
+
+    fn delete_all_rules(&self, address: IpAddr, module: &str) -> Result<()> {
+        self.query_command(address, module, "delete_all_rules", json!({}))?;
+        Ok(())
+    }
+
+    fn set_rules_enabled(&self, address: IpAddr, module: &str, enabled: bool) -> Result<()> {
+        self.query_command(
+            address,
+            module,
+            "set_overall_enable",
+            json!({ "enable": u8::from(enabled) }),
+        )?;
         Ok(())
     }
 
@@ -453,6 +700,45 @@ fn normalized_value(
     value
         .or_else(|| scaled_value.map(|value| value / scale))
         .ok_or_else(|| Error::InvalidResponse(format!("response omitted {field}")))
+}
+
+fn require_rule_id(id: &Option<String>) -> Result<&str> {
+    id.as_deref()
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| Error::InvalidInput("editing a rule requires its device ID".to_owned()))
+}
+
+mod bool_u8 {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &bool, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(u8::from(*value))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+        Ok(u8::deserialize(deserializer)? != 0)
+    }
+}
+
+mod weekday_array {
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::convert::TryInto;
+
+    pub fn serialize<S: Serializer>(
+        weekdays: &[bool; 7],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        weekdays.map(u8::from).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[bool; 7], D::Error> {
+        let weekdays = Vec::<u8>::deserialize(deserializer)?;
+        let weekdays: [u8; 7] = weekdays
+            .try_into()
+            .map_err(|_| D::Error::custom("wday must contain seven entries"))?;
+        Ok(weekdays.map(|day| day != 0))
+    }
 }
 
 fn command_request(module: &str, command: &str, arguments: Value) -> Value {
@@ -645,5 +931,75 @@ mod tests {
                 energy_kwh: 1.582,
             }]
         );
+    }
+
+    #[test]
+    fn schedule_rule_serializes_protocol_booleans_and_preserves_extra_fields() {
+        let mut extra = Map::new();
+        extra.insert("custom".to_owned(), json!(7));
+        let rule = ScheduleRule {
+            id: None,
+            name: "lights on".to_owned(),
+            enabled: true,
+            repeat: true,
+            weekdays: [true, false, false, true, true, false, false],
+            stime_opt: 0,
+            smin: 1014,
+            sact: 1,
+            etime_opt: -1,
+            emin: 0,
+            eact: -1,
+            soffset: None,
+            eoffset: None,
+            year: 0,
+            month: 0,
+            day: 0,
+            latitude: 0.0,
+            longitude: 0.0,
+            force: 0,
+            extra,
+        };
+
+        assert_eq!(
+            serde_json::to_value(rule).unwrap(),
+            json!({
+                "name": "lights on", "enable": 1, "repeat": 1,
+                "wday": [1, 0, 0, 1, 1, 0, 0],
+                "stime_opt": 0, "smin": 1014, "sact": 1,
+                "etime_opt": -1, "emin": 0, "eact": -1,
+                "year": 0, "month": 0, "day": 0,
+                "latitude": 0.0, "longitude": 0.0, "force": 0,
+                "custom": 7
+            })
+        );
+    }
+
+    #[test]
+    fn rule_responses_deserialize_ids_and_unknown_fields() {
+        let response: RulesResponse<CountdownRule> = serde_json::from_value(json!({
+            "enable": 1,
+            "version": 2,
+            "rule_list": [{
+                "id": "opaque-id", "name": "turn on", "enable": 1,
+                "delay": 1800, "act": 1, "firmware_field": "retained"
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(response.enable, 1);
+        assert_eq!(response.version, Some(2));
+        assert_eq!(response.rule_list[0].id.as_deref(), Some("opaque-id"));
+        assert_eq!(
+            response.rule_list[0].extra.get("firmware_field"),
+            Some(&json!("retained"))
+        );
+    }
+
+    #[test]
+    fn editing_rule_without_id_is_rejected() {
+        assert!(matches!(
+            require_rule_id(&None),
+            Err(Error::InvalidInput(_))
+        ));
     }
 }
