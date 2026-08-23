@@ -1,0 +1,9 @@
+<section id="plug-list" class="plug-grid" aria-live="polite">
+  {% if plugs %}
+    {% for plug in plugs %}
+      {% include "plug.html" %}
+    {% endfor %}
+  {% else %}
+    <div class="empty">No compatible smart plugs responded.</div>
+  {% endif %}
+</section>

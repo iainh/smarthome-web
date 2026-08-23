@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kasa Smart Plug Manager</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #1e3a5f, #0f172a 45%); }
+    main { width: min(72rem, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
+    h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 3rem); letter-spacing: -0.04em; }
+    .subtitle { margin: .35rem 0 0; color: #94a3b8; }
+    button { border: 0; border-radius: .75rem; padding: .75rem 1rem; font: inherit; font-weight: 700; cursor: pointer; transition: transform .15s, opacity .15s; }
+    button:hover { transform: translateY(-1px); }
+    button:disabled { cursor: wait; opacity: .55; }
+    .refresh { color: #0f172a; background: #e2e8f0; white-space: nowrap; }
+    .plug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; }
+    .plug-card { display: grid; gap: 1rem; padding: 1.25rem; border: 1px solid #334155; border-radius: 1rem; background: rgb(15 23 42 / 78%); box-shadow: 0 1rem 2rem rgb(0 0 0 / 18%); }
+    .plug-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+    .plug-heading h2 { margin: 0; font-size: 1.15rem; }
+    .model { margin: .2rem 0 0; color: #94a3b8; font-size: .85rem; }
+    .state { border-radius: 999px; padding: .25rem .6rem; font-size: .75rem; font-weight: 800; text-transform: uppercase; }
+    .state-on { color: #052e16; background: #86efac; }
+    .state-off { color: #450a0a; background: #fca5a5; }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: .35rem .75rem; margin: 0; font-size: .85rem; }
+    dt { color: #94a3b8; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    .toggle { width: 100%; color: #fff; background: #2563eb; }
+    .toggle-off { background: #dc2626; }
+    .empty { padding: 3rem 1rem; border: 1px dashed #475569; border-radius: 1rem; color: #94a3b8; text-align: center; }
+    .htmx-request .button-label { opacity: .5; }
+    @media (max-width: 36rem) { header { align-items: stretch; flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Smart plugs</h1>
+        <p class="subtitle">Discover and control Kasa plugs on your local network.</p>
+      </div>
+      <button class="refresh" hx-post="/refresh" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="this">
+        <span class="button-label">Refresh devices</span>
+      </button>
+    </header>
+    {% include "plug-list.html" %}
+  </main>
+  <script>
+    document.body.addEventListener("htmx:responseError", function (event) {
+      window.alert(event.detail.xhr.responseText || "The device request failed.");
+    });
+  </script>
+</body>
+</html>
