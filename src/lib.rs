@@ -204,6 +204,42 @@ pub struct NextAction {
     pub action_type: i8,
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct AccessPoint {
+    pub ssid: String,
+    #[serde(default)]
+    pub key_type: Option<u8>,
+    #[serde(default)]
+    pub cipher_type: Option<u8>,
+    #[serde(default)]
+    pub channel: Option<u8>,
+    #[serde(default)]
+    pub signal_level: Option<i16>,
+    #[serde(default)]
+    pub bssid: Option<String>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct CloudInfo {
+    #[serde(default, rename = "binded", with = "optional_bool_u8")]
+    pub bound: Option<bool>,
+    #[serde(default, rename = "cld_connection", with = "optional_bool_u8")]
+    pub connected: Option<bool>,
+    #[serde(default)]
+    pub server: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FactoryResetConfirmation {
+    EraseAllSettings,
+}
+
 #[derive(Debug, Clone)]
 pub struct SmartHomeClient {
     timeout: Duration,
@@ -277,6 +313,11 @@ struct RulesResponse<T> {
     enable: u8,
     version: Option<u8>,
     rule_list: Vec<T>,
+}
+
+#[derive(Deserialize)]
+struct WifiScanResponse {
+    ap_list: Vec<AccessPoint>,
 }
 
 impl SmartHomeClient {
@@ -500,6 +541,129 @@ impl SmartHomeClient {
         self.set_rules_enabled(address, "anti_theft", enabled)
     }
 
+    pub fn scan_wifi(&self, address: IpAddr, refresh: bool) -> Result<Vec<AccessPoint>> {
+        let arguments = json!({ "refresh": u8::from(refresh) });
+        let response = match self.query_command(address, "netif", "get_scaninfo", arguments.clone())
+        {
+            Ok(response) => response,
+            Err(Error::Protocol { code: -1, .. }) => self.query_command(
+                address,
+                "smartlife.iot.common.softaponboarding",
+                "get_scaninfo",
+                arguments,
+            )?,
+            Err(error) => return Err(error),
+        };
+        let response: WifiScanResponse = serde_json::from_value(response)?;
+        Ok(response.ap_list)
+    }
+
+    /// Changes the device's Wi-Fi network and may make it unreachable.
+    pub fn configure_wifi(
+        &self,
+        address: IpAddr,
+        ssid: &str,
+        password: &str,
+        key_type: u8,
+    ) -> Result<()> {
+        if ssid.is_empty() {
+            return Err(Error::InvalidInput("Wi-Fi SSID cannot be empty".to_owned()));
+        }
+        let arguments = json!({
+            "ssid": ssid,
+            "password": password,
+            "key_type": key_type,
+        });
+        match self.query_command(address, "netif", "set_stainfo", arguments.clone()) {
+            Ok(_) => Ok(()),
+            Err(Error::Protocol { code: -1, .. }) => {
+                self.query_command(
+                    address,
+                    "smartlife.iot.common.softaponboarding",
+                    "set_stainfo",
+                    arguments,
+                )?;
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn get_cloud_info(&self, address: IpAddr) -> Result<CloudInfo> {
+        let response = self.query_command(address, "cnCloud", "get_info", json!({}))?;
+        Ok(serde_json::from_value(response)?)
+    }
+
+    pub fn get_cloud_firmware_list(&self, address: IpAddr) -> Result<Value> {
+        self.query_command(address, "cnCloud", "get_intl_fw_list", json!({}))
+    }
+
+    /// Changes the cloud endpoint and can break cloud connectivity.
+    pub fn set_cloud_server(&self, address: IpAddr, server: &str) -> Result<()> {
+        if server.is_empty() {
+            return Err(Error::InvalidInput(
+                "cloud server cannot be empty".to_owned(),
+            ));
+        }
+        self.query_command(
+            address,
+            "cnCloud",
+            "set_server_url",
+            json!({ "server": server }),
+        )?;
+        Ok(())
+    }
+
+    /// Sends cloud credentials using the protocol's weak XOR obfuscation.
+    pub fn bind_cloud(&self, address: IpAddr, username: &str, password: &str) -> Result<()> {
+        self.query_command(
+            address,
+            "cnCloud",
+            "bind",
+            json!({ "username": username, "password": password }),
+        )?;
+        Ok(())
+    }
+
+    /// Permanently removes the device's cloud-account association.
+    pub fn unbind_cloud(&self, address: IpAddr) -> Result<()> {
+        self.query_command(address, "cnCloud", "unbind", json!({}))?;
+        Ok(())
+    }
+
+    /// Erases all settings and returns the device to factory defaults.
+    pub fn factory_reset(
+        &self,
+        address: IpAddr,
+        _confirmation: FactoryResetConfirmation,
+        delay: Duration,
+    ) -> Result<()> {
+        self.query_command(
+            address,
+            "system",
+            "reset",
+            json!({ "delay": delay.as_secs() }),
+        )?;
+        Ok(())
+    }
+
+    /// Sends an arbitrary protocol request and returns the complete response.
+    pub fn query_raw(&self, address: IpAddr, request: &Value) -> Result<Value> {
+        let address = SocketAddr::new(address, SMART_HOME_PORT);
+        let mut stream = TcpStream::connect_timeout(&address, self.timeout)?;
+        stream.set_read_timeout(Some(self.timeout))?;
+        stream.set_write_timeout(Some(self.timeout))?;
+        stream.set_nodelay(true)?;
+        stream.write_all(&encode_frame(request)?)?;
+        read_frame(&mut stream)
+    }
+
+    /// Sends an arbitrary JSON protocol request and returns the complete response.
+    pub fn query_raw_json(&self, address: IpAddr, request: &str) -> Result<Value> {
+        let request = serde_json::from_str(request)?;
+        self.query_raw(address, &request)
+    }
+
     fn get_rules<T: DeserializeOwned>(&self, address: IpAddr, module: &str) -> Result<RuleSet<T>> {
         let response = self.query_command(address, module, "get_rules", json!({}))?;
         let response: RulesResponse<T> = serde_json::from_value(response)?;
@@ -559,18 +723,8 @@ impl SmartHomeClient {
         command: &str,
         arguments: Value,
     ) -> Result<Value> {
-        let response = self.query(address, &command_request(module, command, arguments))?;
+        let response = self.query_raw(address, &command_request(module, command, arguments))?;
         command_response(response, module, command)
-    }
-
-    fn query(&self, address: IpAddr, request: &Value) -> Result<Value> {
-        let address = SocketAddr::new(address, SMART_HOME_PORT);
-        let mut stream = TcpStream::connect_timeout(&address, self.timeout)?;
-        stream.set_read_timeout(Some(self.timeout))?;
-        stream.set_write_timeout(Some(self.timeout))?;
-        stream.set_nodelay(true)?;
-        stream.write_all(&encode_frame(request)?)?;
-        read_frame(&mut stream)
     }
 }
 
@@ -717,6 +871,16 @@ mod bool_u8 {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
         Ok(u8::deserialize(deserializer)? != 0)
+    }
+}
+
+mod optional_bool_u8 {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<bool>, D::Error> {
+        Ok(Option::<u8>::deserialize(deserializer)?.map(|value| value != 0))
     }
 }
 
@@ -1001,5 +1165,56 @@ mod tests {
             require_rule_id(&None),
             Err(Error::InvalidInput(_))
         ));
+    }
+
+    #[test]
+    fn wifi_scan_and_cloud_responses_tolerate_firmware_fields() {
+        let scan: WifiScanResponse = serde_json::from_value(json!({
+            "ap_list": [{
+                "ssid": "network", "key_type": 3, "channel": 6,
+                "future_field": true
+            }]
+        }))
+        .unwrap();
+        assert_eq!(scan.ap_list[0].ssid, "network");
+        assert_eq!(
+            scan.ap_list[0].extra.get("future_field"),
+            Some(&json!(true))
+        );
+
+        let cloud: CloudInfo = serde_json::from_value(json!({
+            "binded": 1,
+            "cld_connection": 0,
+            "server": "devs.tplinkcloud.com",
+            "tcspStatus": 1
+        }))
+        .unwrap();
+        assert_eq!(cloud.bound, Some(true));
+        assert_eq!(cloud.connected, Some(false));
+        assert_eq!(cloud.extra.get("tcspStatus"), Some(&json!(1)));
+    }
+
+    #[test]
+    fn provisioning_cloud_and_reset_commands_match_protocol_envelopes() {
+        assert_eq!(
+            command_request(
+                "netif",
+                "set_stainfo",
+                json!({ "ssid": "wifi", "password": "secret", "key_type": 3 })
+            ),
+            json!({
+                "netif": { "set_stainfo": {
+                    "ssid": "wifi", "password": "secret", "key_type": 3
+                }}
+            })
+        );
+        assert_eq!(
+            command_request("cnCloud", "unbind", json!({})),
+            json!({ "cnCloud": { "unbind": {} } })
+        );
+        assert_eq!(
+            command_request("system", "reset", json!({ "delay": 1 })),
+            json!({ "system": { "reset": { "delay": 1 } } })
+        );
     }
 }
