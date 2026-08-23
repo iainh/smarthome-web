@@ -24,6 +24,7 @@ pub enum Error {
         code: i64,
         message: Option<String>,
     },
+    InvalidInput(String),
     InvalidResponse(String),
     ResponseTooLarge(usize),
 }
@@ -46,6 +47,7 @@ impl fmt::Display for Error {
                     .map(|message| format!(": {message}"))
                     .unwrap_or_default()
             ),
+            Self::InvalidInput(message) => write!(formatter, "invalid input: {message}"),
             Self::InvalidResponse(message) => write!(formatter, "invalid response: {message}"),
             Self::ResponseTooLarge(length) => {
                 write!(formatter, "response length {length} exceeds protocol limit")
@@ -86,6 +88,29 @@ pub struct SmartPlug {
     pub relay_on: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnergyReading {
+    pub current_amps: f64,
+    pub voltage_volts: f64,
+    pub power_watts: f64,
+    pub total_kwh: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DailyEnergy {
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    pub energy_kwh: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonthlyEnergy {
+    pub year: u16,
+    pub month: u8,
+    pub energy_kwh: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct SmartHomeClient {
     timeout: Duration,
@@ -110,6 +135,47 @@ struct SysInfo {
     sw_ver: String,
     relay_state: u8,
     err_code: i32,
+}
+
+#[derive(Deserialize)]
+struct RealtimeEnergyResponse {
+    current: Option<f64>,
+    current_ma: Option<f64>,
+    voltage: Option<f64>,
+    voltage_mv: Option<f64>,
+    power: Option<f64>,
+    power_mw: Option<f64>,
+    total: Option<f64>,
+    total_wh: Option<f64>,
+    energy: Option<f64>,
+    energy_wh: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct DayStatisticsResponse {
+    day_list: Vec<DayStatistic>,
+}
+
+#[derive(Deserialize)]
+struct DayStatistic {
+    year: u16,
+    month: u8,
+    day: u8,
+    energy: Option<f64>,
+    energy_wh: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct MonthStatisticsResponse {
+    month_list: Vec<MonthStatistic>,
+}
+
+#[derive(Deserialize)]
+struct MonthStatistic {
+    year: u16,
+    month: u8,
+    energy: Option<f64>,
+    energy_wh: Option<f64>,
 }
 
 impl SmartHomeClient {
@@ -202,6 +268,43 @@ impl SmartHomeClient {
         Ok(())
     }
 
+    pub fn get_realtime_energy(&self, address: IpAddr) -> Result<EnergyReading> {
+        let response = self.query_command(address, "emeter", "get_realtime", json!({}))?;
+        parse_realtime_energy(response)
+    }
+
+    pub fn get_daily_energy(
+        &self,
+        address: IpAddr,
+        year: u16,
+        month: u8,
+    ) -> Result<Vec<DailyEnergy>> {
+        if !(1..=12).contains(&month) {
+            return Err(Error::InvalidInput(format!(
+                "month must be between 1 and 12, got {month}"
+            )));
+        }
+        let response = self.query_command(
+            address,
+            "emeter",
+            "get_daystat",
+            json!({ "year": year, "month": month }),
+        )?;
+        parse_daily_energy(response)
+    }
+
+    pub fn get_monthly_energy(&self, address: IpAddr, year: u16) -> Result<Vec<MonthlyEnergy>> {
+        let response =
+            self.query_command(address, "emeter", "get_monthstat", json!({ "year": year }))?;
+        parse_monthly_energy(response)
+    }
+
+    /// Permanently erases the device's stored energy history.
+    pub fn erase_energy_statistics(&self, address: IpAddr) -> Result<()> {
+        self.query_command(address, "emeter", "erase_emeter_stat", json!({}))?;
+        Ok(())
+    }
+
     fn query_command(
         &self,
         address: IpAddr,
@@ -283,6 +386,73 @@ fn smart_plug(info: SysInfo, address: IpAddr) -> Option<SmartPlug> {
         software_version: info.sw_ver,
         relay_on: info.relay_state != 0,
     })
+}
+
+fn parse_realtime_energy(response: Value) -> Result<EnergyReading> {
+    let reading: RealtimeEnergyResponse = serde_json::from_value(response)?;
+    Ok(EnergyReading {
+        current_amps: normalized_value(reading.current, reading.current_ma, 1_000.0, "current")?,
+        voltage_volts: normalized_value(reading.voltage, reading.voltage_mv, 1_000.0, "voltage")?,
+        power_watts: normalized_value(reading.power, reading.power_mw, 1_000.0, "power")?,
+        total_kwh: normalized_value(
+            reading.total.or(reading.energy),
+            reading.total_wh.or(reading.energy_wh),
+            1_000.0,
+            "total energy",
+        )?,
+    })
+}
+
+fn parse_daily_energy(response: Value) -> Result<Vec<DailyEnergy>> {
+    let response: DayStatisticsResponse = serde_json::from_value(response)?;
+    response
+        .day_list
+        .into_iter()
+        .map(|statistic| {
+            Ok(DailyEnergy {
+                year: statistic.year,
+                month: statistic.month,
+                day: statistic.day,
+                energy_kwh: normalized_value(
+                    statistic.energy,
+                    statistic.energy_wh,
+                    1_000.0,
+                    "daily energy",
+                )?,
+            })
+        })
+        .collect()
+}
+
+fn parse_monthly_energy(response: Value) -> Result<Vec<MonthlyEnergy>> {
+    let response: MonthStatisticsResponse = serde_json::from_value(response)?;
+    response
+        .month_list
+        .into_iter()
+        .map(|statistic| {
+            Ok(MonthlyEnergy {
+                year: statistic.year,
+                month: statistic.month,
+                energy_kwh: normalized_value(
+                    statistic.energy,
+                    statistic.energy_wh,
+                    1_000.0,
+                    "monthly energy",
+                )?,
+            })
+        })
+        .collect()
+}
+
+fn normalized_value(
+    value: Option<f64>,
+    scaled_value: Option<f64>,
+    scale: f64,
+    field: &str,
+) -> Result<f64> {
+    value
+        .or_else(|| scaled_value.map(|value| value / scale))
+        .ok_or_else(|| Error::InvalidResponse(format!("response omitted {field}")))
 }
 
 fn command_request(module: &str, command: &str, arguments: Value) -> Value {
@@ -415,5 +585,65 @@ mod tests {
                 ..
             } if message == "module not support"
         ));
+    }
+
+    #[test]
+    fn scaled_energy_response_is_normalized_to_si_units() {
+        let reading = parse_realtime_energy(json!({
+            "err_code": 0,
+            "current_ma": 296,
+            "voltage_mv": 230_123,
+            "power_mw": 63_499,
+            "total_wh": 12_068
+        }))
+        .unwrap();
+
+        assert_eq!(
+            reading,
+            EnergyReading {
+                current_amps: 0.296,
+                voltage_volts: 230.123,
+                power_watts: 63.499,
+                total_kwh: 12.068,
+            }
+        );
+    }
+
+    #[test]
+    fn energy_history_accepts_kwh_and_wh_firmware_formats() {
+        assert_eq!(
+            parse_daily_energy(json!({
+                "day_list": [
+                    { "year": 2026, "month": 8, "day": 1, "energy": 0.026 },
+                    { "year": 2026, "month": 8, "day": 2, "energy_wh": 109 }
+                ]
+            }))
+            .unwrap(),
+            vec![
+                DailyEnergy {
+                    year: 2026,
+                    month: 8,
+                    day: 1,
+                    energy_kwh: 0.026,
+                },
+                DailyEnergy {
+                    year: 2026,
+                    month: 8,
+                    day: 2,
+                    energy_kwh: 0.109,
+                },
+            ]
+        );
+        assert_eq!(
+            parse_monthly_energy(json!({
+                "month_list": [{ "year": 2026, "month": 8, "energy_wh": 1_582 }]
+            }))
+            .unwrap(),
+            vec![MonthlyEnergy {
+                year: 2026,
+                month: 8,
+                energy_kwh: 1.582,
+            }]
+        );
     }
 }
