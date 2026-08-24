@@ -1,0 +1,88 @@
+<aside id="device-pane" class="device-pane is-open" aria-label="Automations for {{ panel.address }}">
+  <div class="pane-header">
+    <div>
+      <h2>Automations</h2>
+      <span class="schedule-status">{{ panel.address }}</span>
+    </div>
+    <button class="pane-close" type="button" aria-label="Close automation pane" onclick="this.closest('.device-pane').classList.remove('is-open')">×</button>
+  </div>
+
+  <p class="automation-intro">Rules are evaluated every five minutes using the plug's location and Open-Meteo. This server must remain running.</p>
+
+  <section class="weather-card">
+    <div class="weather-header">
+      <h3>Current conditions</h3>
+      <button class="small-button" type="button" hx-get="/plugs/{{ panel.address }}/automations" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="this">Refresh</button>
+    </div>
+    {% if panel.weather %}
+      <dl class="weather-grid">
+        <div><dt>Local time</dt><dd>{{ panel.weather.local_time }} {{ panel.weather.timezone }}</dd></div>
+        <div><dt>Daylight</dt><dd>{% if panel.weather.is_day %}Day{% else %}Night{% endif %}</dd></div>
+        <div><dt>Weather</dt><dd>{{ panel.weather.condition }}</dd></div>
+        <div><dt>Light level</dt><dd>{{ panel.weather.shortwave_radiation }} W/m²</dd></div>
+        <div><dt>Cloud cover</dt><dd>{{ panel.weather.cloud_cover }}%</dd></div>
+        <div><dt>Temperature</dt><dd>{{ panel.weather.temperature }} °C</dd></div>
+        <div><dt>Feels like</dt><dd>{{ panel.weather.apparent_temperature }} °C</dd></div>
+        <div><dt>Precipitation</dt><dd>{{ panel.weather.precipitation }} mm</dd></div>
+        <div><dt>Sunrise</dt><dd>{{ panel.weather.sunrise }}</dd></div>
+        <div><dt>Sunset</dt><dd>{{ panel.weather.sunset }}</dd></div>
+      </dl>
+    {% else %}
+      <p class="schedule-status">Current weather is unavailable.</p>
+    {% endif %}
+  </section>
+
+  {% for rule in panel.rules %}
+    <article class="timer-rule">
+      <div>
+        <h3>{{ rule.title }}</h3>
+        <p>{{ rule.description }}</p>
+      </div>
+      <button class="small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/automations/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Delete this automation?" hx-disabled-elt="this">Delete</button>
+    </article>
+  {% else %}
+    <p class="schedule-status">No custom automations configured.</p>
+  {% endfor %}
+
+  {% if panel.location_available %}
+    <details>
+      <summary>Add sunrise or sunset rule</summary>
+      <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/automations/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <label>Event
+          <select name="event">
+            <option value="sunset">Sunset</option>
+            <option value="sunrise">Sunrise</option>
+          </select>
+        </label>
+        <label>Offset in minutes
+          <input name="offset_minutes" type="number" min="-180" max="180" required value="0">
+          <span>Use a negative number for before the event.</span>
+        </label>
+        <label>Action
+          <select name="action">
+            <option value="on">Turn on</option>
+            <option value="off">Turn off</option>
+          </select>
+        </label>
+        <button class="small-button" type="submit">Add solar rule</button>
+      </form>
+    </details>
+
+    <details>
+      <summary>Add outdoor-light rule</summary>
+      <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/automations/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <label>Turn on below
+          <input name="on_below" type="number" min="0" max="1499" step="1" required value="75">
+          <span>Shortwave radiation in W/m².</span>
+        </label>
+        <label>Turn off above
+          <input name="off_above" type="number" min="1" max="1500" step="1" required value="125">
+          <span>The gap prevents rapid switching.</span>
+        </label>
+        <button class="small-button" type="submit">Add light rule</button>
+      </form>
+    </details>
+  {% else %}
+    <p class="advanced-note">Configure this plug's location in the Kasa app before adding weather automations.</p>
+  {% endif %}
+</aside>

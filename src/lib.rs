@@ -79,7 +79,7 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SmartPlug {
     pub address: IpAddr,
     pub model: String,
@@ -87,6 +87,8 @@ pub struct SmartPlug {
     pub device_id: String,
     pub software_version: String,
     pub relay_on: bool,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -276,6 +278,14 @@ struct SysInfo {
     device_id: String,
     sw_ver: String,
     relay_state: u8,
+    #[serde(default)]
+    latitude: Option<f64>,
+    #[serde(default)]
+    longitude: Option<f64>,
+    #[serde(default)]
+    latitude_i: Option<i32>,
+    #[serde(default)]
+    longitude_i: Option<i32>,
     err_code: i32,
 }
 
@@ -791,6 +801,12 @@ fn smart_plug(info: SysInfo, address: IpAddr) -> Option<SmartPlug> {
     if info.err_code != 0 {
         return None;
     }
+    let latitude = info
+        .latitude
+        .or_else(|| info.latitude_i.map(|value| f64::from(value) / 10_000.0));
+    let longitude = info
+        .longitude
+        .or_else(|| info.longitude_i.map(|value| f64::from(value) / 10_000.0));
 
     Some(SmartPlug {
         address,
@@ -799,6 +815,8 @@ fn smart_plug(info: SysInfo, address: IpAddr) -> Option<SmartPlug> {
         device_id: info.device_id,
         software_version: info.sw_ver,
         relay_on: info.relay_state != 0,
+        latitude,
+        longitude,
     })
 }
 
@@ -994,7 +1012,7 @@ mod tests {
 
     #[test]
     fn discovery_response_produces_inventory_entry() {
-        let plaintext = br#"{"system":{"get_sysinfo":{"model":"HS105(US)","alias":"Desk lamp","deviceId":"device-1","sw_ver":"1.5.6","relay_state":1,"err_code":0,"new_field":"ignored"}}}"#;
+        let plaintext = br#"{"system":{"get_sysinfo":{"model":"HS105(US)","alias":"Desk lamp","deviceId":"device-1","sw_ver":"1.5.6","relay_state":1,"latitude_i":464106,"longitude_i":-810171,"err_code":0,"new_field":"ignored"}}}"#;
 
         assert_eq!(
             parse_device(&encrypt(plaintext), IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
@@ -1005,6 +1023,8 @@ mod tests {
                 device_id: "device-1".to_owned(),
                 software_version: "1.5.6".to_owned(),
                 relay_on: true,
+                latitude: Some(46.4106),
+                longitude: Some(-81.0171),
             })
         );
     }

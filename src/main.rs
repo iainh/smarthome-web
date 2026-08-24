@@ -1,3 +1,8 @@
+mod automation;
+
+use automation::{
+    AutomationEngine, AutomationRule, AutomationTrigger, NewAutomation, SolarEvent, WeatherStatus,
+};
 use axum::extract::{Form, Path, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
@@ -9,6 +14,7 @@ use std::convert::TryFrom;
 use std::error::Error as StdError;
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tddp_client::{CountdownRule, RuleSet, ScheduleRule, SmartHomeClient, SmartPlug};
@@ -19,6 +25,7 @@ const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
 struct AppState {
     client: SmartHomeClient,
     templates: Environment<'static>,
+    automations: Arc<AutomationEngine>,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,6 +55,34 @@ impl From<SmartPlug> for PlugView {
 #[derive(Deserialize)]
 struct RelayForm {
     on: bool,
+}
+
+#[derive(Deserialize)]
+struct SolarAutomationForm {
+    event: String,
+    offset_minutes: i16,
+    action: String,
+}
+
+#[derive(Deserialize)]
+struct LightAutomationForm {
+    on_below: f64,
+    off_above: f64,
+}
+
+#[derive(Serialize)]
+struct AutomationPanel {
+    address: String,
+    location_available: bool,
+    weather: Option<WeatherStatus>,
+    rules: Vec<AutomationView>,
+}
+
+#[derive(Serialize)]
+struct AutomationView {
+    id: u64,
+    title: &'static str,
+    description: String,
 }
 
 #[derive(Deserialize)]
@@ -190,15 +225,34 @@ impl From<task::JoinError> for AppError {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn StdError>> {
+async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
+    let automation_path = std::env::var_os("AUTOMATIONS_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("automations.json"));
+    let automations = Arc::new(AutomationEngine::load(automation_path)?);
     let state = Arc::new(AppState {
         client: SmartHomeClient::new(),
         templates: templates()?,
+        automations: automations.clone(),
     });
+    tokio::spawn(automations.run(state.client.clone()));
     let app = Router::new()
         .route("/", get(index))
         .route("/refresh", post(refresh))
         .route("/plugs/{address}/relay", post(set_relay))
+        .route("/plugs/{address}/automations", get(get_automations))
+        .route(
+            "/plugs/{address}/automations/solar",
+            post(create_solar_automation),
+        )
+        .route(
+            "/plugs/{address}/automations/light",
+            post(create_light_automation),
+        )
+        .route(
+            "/plugs/{address}/automations/{id}",
+            axum::routing::delete(delete_automation),
+        )
         .route(
             "/plugs/{address}/countdown",
             get(get_countdown).post(create_countdown),
@@ -269,6 +323,65 @@ async fn set_relay(
         .get_template("plug.html")?
         .render(context! { plug })?;
     Ok(Html(fragment))
+}
+
+async fn get_automations(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<IpAddr>,
+) -> Result<Html<String>, AppError> {
+    let plug = get_plug(state.client.clone(), address).await?;
+    let panel = load_automation_panel(&state, &plug).await?;
+    render_automation_panel(&state, &panel)
+}
+
+async fn create_solar_automation(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<IpAddr>,
+    Form(form): Form<SolarAutomationForm>,
+) -> Result<Html<String>, AppError> {
+    let plug = get_plug(state.client.clone(), address).await?;
+    require_location(&plug)?;
+    let automation = solar_automation(form, plug.device_id.clone())?;
+    state
+        .automations
+        .add(automation)
+        .map_err(automation_error)?;
+    let panel = load_automation_panel(&state, &plug).await?;
+    render_automation_panel(&state, &panel)
+}
+
+async fn create_light_automation(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<IpAddr>,
+    Form(form): Form<LightAutomationForm>,
+) -> Result<Html<String>, AppError> {
+    let plug = get_plug(state.client.clone(), address).await?;
+    require_location(&plug)?;
+    let automation = light_automation(form, plug.device_id.clone())?;
+    state
+        .automations
+        .add(automation)
+        .map_err(automation_error)?;
+    let panel = load_automation_panel(&state, &plug).await?;
+    render_automation_panel(&state, &panel)
+}
+
+async fn delete_automation(
+    State(state): State<Arc<AppState>>,
+    Path((address, id)): Path<(IpAddr, u64)>,
+) -> Result<Html<String>, AppError> {
+    let plug = get_plug(state.client.clone(), address).await?;
+    let deleted = state
+        .automations
+        .delete(&plug.device_id, id)
+        .map_err(automation_error)?;
+    if !deleted {
+        return Err(AppError::not_found(format!(
+            "automation {id} was not found"
+        )));
+    }
+    let panel = load_automation_panel(&state, &plug).await?;
+    render_automation_panel(&state, &panel)
 }
 
 async fn get_countdown(
@@ -403,6 +516,84 @@ async fn discover(client: SmartHomeClient) -> Result<Vec<PlugView>, AppError> {
     Ok(plugs.into_iter().map(PlugView::from).collect())
 }
 
+async fn get_plug(client: SmartHomeClient, address: IpAddr) -> Result<SmartPlug, AppError> {
+    Ok(task::spawn_blocking(move || client.get_sysinfo(address)).await??)
+}
+
+fn solar_automation(
+    form: SolarAutomationForm,
+    device_id: String,
+) -> Result<NewAutomation, AppError> {
+    if !(-180..=180).contains(&form.offset_minutes) {
+        return Err(AppError::bad_request(
+            "solar offset must be between -180 and 180 minutes",
+        ));
+    }
+    let event = match form.event.as_str() {
+        "sunrise" => SolarEvent::Sunrise,
+        "sunset" => SolarEvent::Sunset,
+        _ => {
+            return Err(AppError::bad_request(
+                "solar event must be sunrise or sunset",
+            ))
+        }
+    };
+    let turn_on = parse_action(&form.action)?;
+    Ok(NewAutomation {
+        device_id,
+        trigger: AutomationTrigger::Solar {
+            event,
+            offset_minutes: form.offset_minutes,
+        },
+        turn_on,
+    })
+}
+
+fn light_automation(
+    form: LightAutomationForm,
+    device_id: String,
+) -> Result<NewAutomation, AppError> {
+    if !form.on_below.is_finite()
+        || !form.off_above.is_finite()
+        || form.on_below < 0.0
+        || form.off_above > 1_500.0
+        || form.on_below >= form.off_above
+    {
+        return Err(AppError::bad_request(
+            "light thresholds must satisfy 0 ≤ on below < off above ≤ 1500 W/m²",
+        ));
+    }
+    Ok(NewAutomation {
+        device_id,
+        trigger: AutomationTrigger::LightLevel {
+            on_below: form.on_below,
+            off_above: form.off_above,
+        },
+        turn_on: true,
+    })
+}
+
+fn parse_action(action: &str) -> Result<bool, AppError> {
+    match action {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        _ => Err(AppError::bad_request("automation action must be on or off")),
+    }
+}
+
+fn require_location(plug: &SmartPlug) -> Result<(), AppError> {
+    if plug.latitude.is_none() || plug.longitude.is_none() {
+        return Err(AppError::bad_request(
+            "this plug does not have location coordinates configured",
+        ));
+    }
+    Ok(())
+}
+
+fn automation_error(error: Box<dyn StdError + Send + Sync>) -> AppError {
+    AppError::internal(error.to_string())
+}
+
 impl TryFrom<CountdownForm> for CountdownInput {
     type Error = AppError;
 
@@ -529,6 +720,72 @@ impl ScheduleInput {
     }
 }
 
+async fn load_automation_panel(
+    state: &AppState,
+    plug: &SmartPlug,
+) -> Result<AutomationPanel, AppError> {
+    let rules = state
+        .automations
+        .rules_for(&plug.device_id)
+        .map_err(automation_error)?;
+    let location_available = plug.latitude.is_some() && plug.longitude.is_some();
+    let weather = if location_available {
+        match state.automations.weather_status(plug).await {
+            Ok(weather) => Some(weather),
+            Err(error) => {
+                eprintln!("could not load current weather: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    Ok(AutomationPanel {
+        address: plug.address.to_string(),
+        location_available,
+        weather,
+        rules: rules.into_iter().map(automation_view).collect(),
+    })
+}
+
+fn automation_view(rule: AutomationRule) -> AutomationView {
+    match rule.trigger {
+        AutomationTrigger::Solar {
+            event,
+            offset_minutes,
+        } => {
+            let (title, event_name) = match event {
+                SolarEvent::Sunrise => ("Sunrise", "sunrise"),
+                SolarEvent::Sunset => ("Sunset", "sunset"),
+            };
+            let timing = match offset_minutes.cmp(&0) {
+                std::cmp::Ordering::Less => {
+                    format!("{} min before {event_name}", offset_minutes.unsigned_abs())
+                }
+                std::cmp::Ordering::Equal => format!("at {event_name}"),
+                std::cmp::Ordering::Greater => {
+                    format!("{} min after {event_name}", offset_minutes.unsigned_abs())
+                }
+            };
+            AutomationView {
+                id: rule.id,
+                title,
+                description: format!("Turn {} {timing}", if rule.turn_on { "on" } else { "off" }),
+            }
+        }
+        AutomationTrigger::LightLevel {
+            on_below,
+            off_above,
+        } => AutomationView {
+            id: rule.id,
+            title: "Outdoor light",
+            description: format!(
+                "Turn on at ≤ {on_below:.0} W/m² and off at ≥ {off_above:.0} W/m²"
+            ),
+        },
+    }
+}
+
 fn load_countdown_panel(
     client: &SmartHomeClient,
     address: IpAddr,
@@ -652,6 +909,17 @@ fn render_countdown_panel(
     Ok(Html(fragment))
 }
 
+fn render_automation_panel(
+    state: &AppState,
+    panel: &AutomationPanel,
+) -> Result<Html<String>, AppError> {
+    let fragment = state
+        .templates
+        .get_template("automation-panel.html")?
+        .render(context! { panel })?;
+    Ok(Html(fragment))
+}
+
 fn templates() -> Result<Environment<'static>, minijinja::Error> {
     let mut templates = Environment::new();
     templates.set_auto_escape_callback(|name| {
@@ -667,6 +935,10 @@ fn templates() -> Result<Environment<'static>, minijinja::Error> {
         include_str!("../templates/plug-list.html"),
     )?;
     templates.add_template("plug.html", include_str!("../templates/plug.html"))?;
+    templates.add_template(
+        "automation-panel.html",
+        include_str!("../templates/automation-panel.html"),
+    )?;
     templates.add_template(
         "countdown-panel.html",
         include_str!("../templates/countdown-panel.html"),
@@ -702,11 +974,100 @@ mod tests {
 
         assert!(page.contains("hx-post=\"/refresh\""));
         assert!(page.contains("hx-post=\"/plugs/192.0.2.1/relay\""));
+        assert!(page.contains("hx-get=\"/plugs/192.0.2.1/automations\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/countdown\""));
         assert!(page.contains("hx-target=\"#device-pane\""));
         assert!(page.contains("id=\"device-pane\""));
         assert!(page.contains("&lt;Desk lamp&gt;"));
         assert!(!page.contains("<Desk lamp>"));
+    }
+
+    #[test]
+    fn automation_forms_validate_solar_offsets_and_light_hysteresis() {
+        let solar = solar_automation(
+            SolarAutomationForm {
+                event: "sunset".to_owned(),
+                offset_minutes: -30,
+                action: "on".to_owned(),
+            },
+            "plug".to_owned(),
+        )
+        .unwrap();
+        assert_eq!(
+            solar.trigger,
+            AutomationTrigger::Solar {
+                event: SolarEvent::Sunset,
+                offset_minutes: -30,
+            }
+        );
+        assert!(solar.turn_on);
+        assert!(solar_automation(
+            SolarAutomationForm {
+                event: "sunset".to_owned(),
+                offset_minutes: 181,
+                action: "on".to_owned(),
+            },
+            "plug".to_owned(),
+        )
+        .is_err());
+
+        assert!(light_automation(
+            LightAutomationForm {
+                on_below: 75.0,
+                off_above: 125.0,
+            },
+            "plug".to_owned(),
+        )
+        .is_ok());
+        assert!(light_automation(
+            LightAutomationForm {
+                on_below: 125.0,
+                off_above: 125.0,
+            },
+            "plug".to_owned(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn automation_panel_renders_persisted_rules_and_actions() {
+        let panel = AutomationPanel {
+            address: "192.0.2.1".to_owned(),
+            location_available: true,
+            weather: Some(WeatherStatus {
+                local_time: "20:15".to_owned(),
+                timezone: "GMT-4".to_owned(),
+                condition: "Overcast",
+                is_day: false,
+                shortwave_radiation: 42.5,
+                cloud_cover: 100,
+                temperature: 13.4,
+                apparent_temperature: 11.9,
+                precipitation: 0.0,
+                sunrise: "06:33".to_owned(),
+                sunset: "20:19".to_owned(),
+            }),
+            rules: vec![AutomationView {
+                id: 7,
+                title: "Sunset",
+                description: "Turn on 30 min before sunset".to_owned(),
+            }],
+        };
+
+        let fragment = templates()
+            .unwrap()
+            .get_template("automation-panel.html")
+            .unwrap()
+            .render(context! { panel })
+            .unwrap();
+
+        assert!(fragment.contains("Turn on 30 min before sunset"));
+        assert!(fragment.contains("20:15 GMT-4"));
+        assert!(fragment.contains("42.5 W/m²"));
+        assert!(fragment.contains("Overcast"));
+        assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/solar\""));
+        assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/light\""));
+        assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/automations/7\""));
     }
 
     #[test]

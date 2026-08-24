@@ -35,7 +35,7 @@
     dd { margin: 0; overflow-wrap: anywhere; }
     .toggle { width: 100%; color: #fff; background: #2563eb; }
     .toggle-off { background: #dc2626; }
-    .plug-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+    .plug-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
     .plug-actions button { color: #cbd5e1; background: #334155; }
     .device-pane { position: fixed; z-index: 10; inset: 0 0 0 auto; width: min(30rem, 100%); overflow-y: auto; padding: 1.25rem; border-left: 1px solid #334155; background: #0f172a; box-shadow: -1rem 0 3rem rgb(0 0 0 / 45%); }
     .device-pane:not(.is-open) { display: none; }
@@ -64,9 +64,20 @@
     .timer-rule { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .8rem; border-radius: .75rem; background: #1e293b; }
     .timer-rule h3 { margin: 0; font-size: .9rem; }
     .timer-rule p { margin: .2rem 0 0; color: #94a3b8; font-size: .78rem; }
+    .automation-intro { margin: 0; color: #94a3b8; font-size: .85rem; line-height: 1.5; }
+    .weather-card { display: grid; gap: .75rem; margin: 1rem 0; padding: 1rem; border: 1px solid #334155; border-radius: .75rem; background: #1e293b; }
+    .weather-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .weather-header h3 { margin: 0; font-size: 1rem; }
+    .weather-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+    .weather-grid div { min-width: 0; }
+    .weather-grid dt { font-size: .72rem; }
+    .weather-grid dd { margin-top: .15rem; font-size: .9rem; font-weight: 700; }
     .empty { padding: 3rem 1rem; border: 1px dashed #475569; border-radius: 1rem; color: #94a3b8; text-align: center; }
     .htmx-request .button-label { opacity: .5; }
-    @media (max-width: 36rem) { header { align-items: stretch; flex-direction: column; } }
+    @media (max-width: 36rem) {
+      header { align-items: stretch; flex-direction: column; }
+      .plug-actions { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>

@@ -1,4 +1,5 @@
 /target
+automations.json
 **/*.rs.bk
 Cargo.lock
 .idea/**
