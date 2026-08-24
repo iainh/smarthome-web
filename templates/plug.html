@@ -22,4 +22,7 @@
       <button class="toggle" type="submit" name="on" value="true"><span class="button-label">Turn on</span></button>
     {% endif %}
   </form>
+  <button class="schedule-load" type="button" hx-get="/plugs/{{ plug.address }}/schedules" hx-target="#schedule-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+    <span class="button-label">Manage schedules</span>
+  </button>
 </article>

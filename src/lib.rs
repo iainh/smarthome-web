@@ -147,18 +147,27 @@ pub struct ScheduleRule {
     pub stime_opt: i8,
     pub smin: u16,
     pub sact: i8,
+    #[serde(default = "disabled_rule_value")]
     pub etime_opt: i8,
+    #[serde(default)]
     pub emin: u16,
+    #[serde(default = "disabled_rule_value")]
     pub eact: i8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub soffset: Option<i16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eoffset: Option<i16>,
+    #[serde(default)]
     pub year: u16,
+    #[serde(default)]
     pub month: u8,
+    #[serde(default)]
     pub day: u8,
+    #[serde(default)]
     pub latitude: f64,
+    #[serde(default)]
     pub longitude: f64,
+    #[serde(default)]
     pub force: u8,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -190,6 +199,10 @@ pub struct AntiTheftRule {
     pub force: u8,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+fn disabled_rule_value() -> i8 {
+    -1
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -1157,6 +1170,27 @@ mod tests {
             response.rule_list[0].extra.get("firmware_field"),
             Some(&json!("retained"))
         );
+    }
+
+    #[test]
+    fn schedule_response_allows_firmware_to_omit_optional_fields() {
+        let rule: ScheduleRule = serde_json::from_value(json!({
+            "id": "opaque-id",
+            "name": "Schedule Rule",
+            "enable": 1,
+            "repeat": 1,
+            "wday": [0, 1, 1, 1, 1, 1, 0],
+            "stime_opt": 0,
+            "smin": 435,
+            "sact": 1,
+            "eact": -1
+        }))
+        .unwrap();
+
+        assert_eq!(rule.etime_opt, -1);
+        assert_eq!(rule.emin, 0);
+        assert_eq!(rule.year, 0);
+        assert_eq!(rule.latitude, 0.0);
     }
 
     #[test]

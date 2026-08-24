@@ -35,6 +35,31 @@
     dd { margin: 0; overflow-wrap: anywhere; }
     .toggle { width: 100%; color: #fff; background: #2563eb; }
     .toggle-off { background: #dc2626; }
+    .schedule-load { width: 100%; color: #cbd5e1; background: #334155; }
+    .schedule-pane { position: fixed; z-index: 10; inset: 0 0 0 auto; width: min(30rem, 100%); overflow-y: auto; padding: 1.25rem; border-left: 1px solid #334155; background: #0f172a; box-shadow: -1rem 0 3rem rgb(0 0 0 / 45%); }
+    .schedule-pane:not(.is-open) { display: none; }
+    .pane-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+    .pane-header h2 { margin: 0; font-size: 1.3rem; }
+    .pane-close { padding: .35rem .7rem; color: #cbd5e1; background: #334155; font-size: 1.4rem; line-height: 1; }
+    .schedule-panel { display: grid; gap: .8rem; }
+    .schedule-header, .schedule-summary, .schedule-actions { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+    .schedule-header h3 { margin: 0; font-size: 1rem; }
+    .schedule-status { color: #94a3b8; font-size: .8rem; }
+    .schedule-rule { display: grid; gap: .6rem; padding: .8rem; border-radius: .75rem; background: #1e293b; }
+    .schedule-rule h4 { margin: 0; font-size: .9rem; }
+    .schedule-meta { margin: .15rem 0 0; color: #94a3b8; font-size: .78rem; }
+    .small-button { padding: .45rem .65rem; color: #e2e8f0; background: #475569; font-size: .78rem; }
+    .danger { background: #991b1b; }
+    details { border-radius: .6rem; }
+    summary { color: #cbd5e1; cursor: pointer; font-size: .82rem; font-weight: 700; }
+    .schedule-form { display: grid; gap: .7rem; padding-top: .7rem; }
+    .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+    label { display: grid; gap: .25rem; color: #94a3b8; font-size: .75rem; }
+    input, select { width: 100%; border: 1px solid #475569; border-radius: .45rem; padding: .5rem; color: #e2e8f0; background: #0f172a; font: inherit; }
+    .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: .25rem; }
+    .weekday { display: grid; place-items: center; gap: .2rem; padding: .35rem 0; border: 1px solid #475569; border-radius: .4rem; color: #cbd5e1; }
+    .weekday input { width: auto; margin: 0; }
+    .advanced-note { margin: 0; color: #fbbf24; font-size: .75rem; }
     .empty { padding: 3rem 1rem; border: 1px dashed #475569; border-radius: 1rem; color: #94a3b8; text-align: center; }
     .htmx-request .button-label { opacity: .5; }
     @media (max-width: 36rem) { header { align-items: stretch; flex-direction: column; } }
@@ -53,6 +78,7 @@
     </header>
     {% include "plug-list.html" %}
   </main>
+  <aside id="schedule-pane" class="schedule-pane" aria-label="Schedules"></aside>
   <script>
     document.body.addEventListener("htmx:responseError", function (event) {
       window.alert(event.detail.xhr.responseText || "The device request failed.");

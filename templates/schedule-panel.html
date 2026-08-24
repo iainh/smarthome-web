@@ -1,0 +1,103 @@
+<aside id="schedule-pane" class="schedule-pane is-open" aria-label="Schedules for {{ panel.address }}">
+  <div class="pane-header">
+    <div>
+      <h2>Manage schedules</h2>
+      <span class="schedule-status">{{ panel.address }}</span>
+    </div>
+    <button class="pane-close" type="button" aria-label="Close schedule pane" onclick="this.closest('.schedule-pane').classList.remove('is-open')">×</button>
+  </div>
+<section class="schedule-panel">
+  <div class="schedule-header">
+    <div>
+      <h3>Schedules</h3>
+      <span class="schedule-status">{% if panel.enabled %}Globally enabled{% else %}Globally disabled{% endif %}</span>
+    </div>
+    <form hx-post="/plugs/{{ panel.address }}/schedules/enabled" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+      {% if panel.enabled %}
+        <button class="small-button danger" type="submit" name="on" value="false">Disable all</button>
+      {% else %}
+        <button class="small-button" type="submit" name="on" value="true">Enable all</button>
+      {% endif %}
+    </form>
+  </div>
+
+  {% for rule in panel.rules %}
+    <article class="schedule-rule">
+      <div class="schedule-summary">
+        <div>
+          <h4>{{ rule.name }}</h4>
+          <p class="schedule-meta">{{ rule.time }} · {{ rule.action }} · {{ rule.weekday_summary }}</p>
+        </div>
+        <span class="state {% if rule.enabled %}state-on{% else %}state-off{% endif %}">{% if rule.enabled %}On{% else %}Off{% endif %}</span>
+      </div>
+      {% if rule.id %}
+        <div class="schedule-actions">
+          <form hx-post="/plugs/{{ panel.address }}/schedules/{{ rule.id }}/enabled" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+            <button class="small-button" type="submit" name="on" value="{% if rule.enabled %}false{% else %}true{% endif %}">{% if rule.enabled %}Disable{% else %}Enable{% endif %}</button>
+          </form>
+          <button class="small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/schedules/{{ rule.id }}" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-confirm="Delete this schedule?" hx-disabled-elt="this">Delete</button>
+        </div>
+      {% endif %}
+      {% if rule.editable %}
+        <details>
+          <summary>Edit fixed-time schedule</summary>
+          <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/schedules/{{ rule.id }}" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+            <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
+            <div class="form-row">
+              <label>Hour<input name="hour" type="number" min="0" max="23" required value="{{ rule.hour }}"></label>
+              <label>Minute<input name="minute" type="number" min="0" max="59" required value="{{ rule.minute }}"></label>
+            </div>
+            <label>Action
+              <select name="action">
+                <option value="on" {% if rule.action_on %}selected{% endif %}>Turn on</option>
+                <option value="off" {% if not rule.action_on %}selected{% endif %}>Turn off</option>
+              </select>
+            </label>
+            <div class="weekdays">
+              <label class="weekday"><input type="checkbox" name="sun" {% if rule.sun %}checked{% endif %}>S</label>
+              <label class="weekday"><input type="checkbox" name="mon" {% if rule.mon %}checked{% endif %}>M</label>
+              <label class="weekday"><input type="checkbox" name="tue" {% if rule.tue %}checked{% endif %}>T</label>
+              <label class="weekday"><input type="checkbox" name="wed" {% if rule.wed %}checked{% endif %}>W</label>
+              <label class="weekday"><input type="checkbox" name="thu" {% if rule.thu %}checked{% endif %}>T</label>
+              <label class="weekday"><input type="checkbox" name="fri" {% if rule.fri %}checked{% endif %}>F</label>
+              <label class="weekday"><input type="checkbox" name="sat" {% if rule.sat %}checked{% endif %}>S</label>
+            </div>
+            <button class="small-button" type="submit">Save schedule</button>
+          </form>
+        </details>
+      {% else %}
+        <p class="advanced-note">This advanced rule can be enabled or deleted here, but not rewritten.</p>
+      {% endif %}
+    </article>
+  {% else %}
+    <p class="schedule-status">No schedules configured.</p>
+  {% endfor %}
+
+  <details>
+    <summary>Add weekly schedule</summary>
+    <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/schedules" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+      <label>Name<input name="name" maxlength="64" required placeholder="Weekday morning"></label>
+      <div class="form-row">
+        <label>Hour<input name="hour" type="number" min="0" max="23" required value="7"></label>
+        <label>Minute<input name="minute" type="number" min="0" max="59" required value="0"></label>
+      </div>
+      <label>Action
+        <select name="action">
+          <option value="on">Turn on</option>
+          <option value="off">Turn off</option>
+        </select>
+      </label>
+      <div class="weekdays">
+        <label class="weekday"><input type="checkbox" name="sun">S</label>
+        <label class="weekday"><input type="checkbox" name="mon" checked>M</label>
+        <label class="weekday"><input type="checkbox" name="tue" checked>T</label>
+        <label class="weekday"><input type="checkbox" name="wed" checked>W</label>
+        <label class="weekday"><input type="checkbox" name="thu" checked>T</label>
+        <label class="weekday"><input type="checkbox" name="fri" checked>F</label>
+        <label class="weekday"><input type="checkbox" name="sat">S</label>
+      </div>
+      <button class="small-button" type="submit">Add schedule</button>
+    </form>
+  </details>
+</section>
+</aside>
