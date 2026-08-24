@@ -1250,6 +1250,13 @@ mod tests {
                             radiation: 500.0,
                         },
                     ],
+                    average_points: vec![LightPoint {
+                        x: 176.0,
+                        y: 33.6,
+                        time: "12:00".to_owned(),
+                        radiation: 400.0,
+                    }],
+                    average_days: 30,
                     max_radiation: 500,
                     mid_radiation: 250,
                     sunrise_x: 114.8,
@@ -1282,6 +1289,8 @@ mod tests {
         assert!(fragment.contains("42.5 W/m²"));
         assert!(fragment.contains("Overcast"));
         assert!(fragment.contains("Yesterday's outdoor light"));
+        assert!(fragment.contains("30-day hourly average"));
+        assert!(fragment.contains("class=\"light-average-line\""));
         assert!(fragment.contains("class=\"light-line\""));
         assert!(fragment.contains("class=\"solar-line sunrise-line\" x1=\"114.8\""));
         assert!(fragment.contains("Sunrise 06:36"));

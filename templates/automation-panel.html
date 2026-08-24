@@ -52,6 +52,9 @@
             <text class="chart-label" x="312" y="138" text-anchor="middle">24</text>
             <line class="solar-line sunrise-line" x1="{{ history.sunrise_x }}" y1="12" x2="{{ history.sunrise_x }}" y2="120"></line>
             <line class="solar-line sunset-line" x1="{{ history.sunset_x }}" y1="12" x2="{{ history.sunset_x }}" y2="120"></line>
+            <polyline class="light-average-line" points="{% for point in history.average_points %}{{ point.x }},{{ point.y }} {% endfor %}">
+              <title>{{ history.average_days }}-day hourly average</title>
+            </polyline>
             <polyline class="light-line" points="{% for point in history.points %}{{ point.x }},{{ point.y }} {% endfor %}"></polyline>
             {% for point in history.points %}
               <circle class="light-point" cx="{{ point.x }}" cy="{{ point.y }}" r="2.5">
@@ -60,6 +63,7 @@
             {% endfor %}
           </svg>
           <div class="chart-legend">
+            <span><i class="light-average-key"></i>{{ history.average_days }}-day hourly average</span>
             <span><i class="sunrise-key"></i>Sunrise {{ history.sunrise }}</span>
             <span><i class="sunset-key"></i>Sunset {{ history.sunset }}</span>
           </div>

@@ -11,6 +11,7 @@ use tddp_client::{SmartHomeClient, SmartPlug};
 
 const EVALUATION_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const SOLAR_TRIGGER_WINDOW_SECONDS: i64 = 20 * 60;
+const LIGHT_AVERAGE_DAYS: u8 = 30;
 
 type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -70,6 +71,8 @@ pub struct WeatherStatus {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LightHistory {
     pub points: Vec<LightPoint>,
+    pub average_points: Vec<LightPoint>,
+    pub average_days: usize,
     pub max_radiation: u32,
     pub mid_radiation: u32,
     pub sunrise_x: f64,
@@ -166,7 +169,10 @@ impl AutomationEngine {
                 "plug does not have location coordinates",
             )) as Box<dyn Error + Send + Sync>
         })?;
-        Ok(self.fetch_weather(coordinate).await?.status())
+        Ok(self
+            .fetch_weather(coordinate, LIGHT_AVERAGE_DAYS)
+            .await?
+            .status())
     }
 
     pub async fn run(
@@ -214,7 +220,7 @@ impl AutomationEngine {
                 continue;
             };
             if let std::collections::hash_map::Entry::Vacant(entry) = forecasts.entry(key) {
-                entry.insert(self.fetch_weather(key).await?);
+                entry.insert(self.fetch_weather(key, 1).await?);
             }
             let forecast = &forecasts[&key];
             let Some(evaluation) = evaluate_rule(&rule, forecast) else {
@@ -251,7 +257,11 @@ impl AutomationEngine {
         Ok(())
     }
 
-    async fn fetch_weather(&self, coordinate: Coordinate) -> Result<WeatherSnapshot> {
+    async fn fetch_weather(
+        &self,
+        coordinate: Coordinate,
+        past_days: u8,
+    ) -> Result<WeatherSnapshot> {
         let response = self
             .weather
             .get("https://api.open-meteo.com/v1/forecast")
@@ -269,8 +279,8 @@ impl AutomationEngine {
                 ("timezone", "auto"),
                 ("timeformat", "unixtime"),
                 ("forecast_days", "1"),
-                ("past_days", "1"),
             ])
+            .query(&[("past_days", past_days)])
             .send()
             .await?
             .error_for_status()?
@@ -384,11 +394,12 @@ impl WeatherResponse {
         let previous_day_light = day_index.checked_sub(1).and_then(|previous_index| {
             light_history(
                 &self.hourly,
-                value_at(&self.daily.time, previous_index, "previous daily time").ok()?,
-                day,
-                value_at(&self.daily.sunrise, previous_index, "previous sunrise").ok()?,
-                value_at(&self.daily.sunset, previous_index, "previous sunset").ok()?,
+                *self.daily.time.first()?,
+                value_at(&self.daily.time, previous_index, "previous daily time").ok()?..day,
+                value_at(&self.daily.sunrise, previous_index, "previous sunrise").ok()?
+                    ..value_at(&self.daily.sunset, previous_index, "previous sunset").ok()?,
                 self.utc_offset_seconds,
+                day_index,
             )
         });
 
@@ -476,12 +487,14 @@ fn evaluate_rule(rule: &AutomationRule, weather: &WeatherSnapshot) -> Option<Rul
 
 fn light_history(
     hourly: &HourlyWeather,
-    day_start: i64,
-    day_end: i64,
-    sunrise: i64,
-    sunset: i64,
+    history_start: i64,
+    day: std::ops::Range<i64>,
+    solar: std::ops::Range<i64>,
     utc_offset_seconds: i32,
+    average_days: usize,
 ) -> Option<LightHistory> {
+    let day_start = day.start;
+    let day_end = day.end;
     let readings: Vec<_> = hourly
         .time
         .iter()
@@ -495,30 +508,68 @@ fn light_history(
         return None;
     }
 
+    let mut hourly_totals = [0.0; 24];
+    let mut hourly_counts = [0_u32; 24];
+    for (time, radiation) in hourly
+        .time
+        .iter()
+        .copied()
+        .zip(hourly.shortwave_radiation.iter().copied())
+        .filter_map(|(time, radiation)| {
+            (time >= history_start && time < day_end).then_some((time, radiation?))
+        })
+    {
+        let hour =
+            ((time + i64::from(utc_offset_seconds)).rem_euclid(24 * 60 * 60) / (60 * 60)) as usize;
+        hourly_totals[hour] += radiation;
+        hourly_counts[hour] += 1;
+    }
+    let averages: Vec<_> = hourly_totals
+        .iter()
+        .copied()
+        .zip(hourly_counts.iter().copied())
+        .enumerate()
+        .filter_map(|(hour, (total, count))| {
+            (count > 0).then_some((hour, total / f64::from(count)))
+        })
+        .collect();
     let observed_max = readings
         .iter()
         .map(|(_, radiation)| *radiation)
+        .chain(averages.iter().map(|(_, radiation)| *radiation))
         .fold(0.0_f64, f64::max);
     let max_radiation = ((observed_max / 100.0).ceil().max(1.0) * 100.0) as u32;
     let x = |time| 40.0 + (time - day_start) as f64 / (day_end - day_start) as f64 * 272.0;
+    let y = |radiation: f64| rounded(120.0 - radiation.max(0.0) / f64::from(max_radiation) * 108.0);
     let points = readings
         .into_iter()
         .map(|(time, radiation)| LightPoint {
             x: rounded(x(time)),
-            y: rounded(120.0 - radiation.max(0.0) / f64::from(max_radiation) * 108.0),
+            y: y(radiation),
             time: local_time(time, utc_offset_seconds),
             radiation,
+        })
+        .collect();
+    let average_points = averages
+        .into_iter()
+        .map(|(hour, radiation)| LightPoint {
+            x: rounded(40.0 + hour as f64 / 24.0 * 272.0),
+            y: y(radiation),
+            time: format!("{hour:02}:00"),
+            radiation: rounded(radiation),
         })
         .collect();
 
     Some(LightHistory {
         points,
+        average_points,
+        average_days,
         max_radiation,
         mid_radiation: max_radiation / 2,
-        sunrise_x: rounded(x(sunrise)),
-        sunset_x: rounded(x(sunset)),
-        sunrise: local_time(sunrise, utc_offset_seconds),
-        sunset: local_time(sunset, utc_offset_seconds),
+        sunrise_x: rounded(x(solar.start)),
+        sunset_x: rounded(x(solar.end)),
+        sunrise: local_time(solar.start, utc_offset_seconds),
+        sunset: local_time(solar.end, utc_offset_seconds),
     })
 }
 
@@ -679,11 +730,47 @@ mod tests {
         assert_eq!(history.sunset_x, 289.3);
         assert_eq!(history.points[3].radiation, 500.0);
         assert_eq!(history.points[3].y, 12.0);
+        assert_eq!(history.average_days, 1);
+        let average_at_eight = history
+            .average_points
+            .iter()
+            .find(|point| point.time == "08:00")
+            .unwrap();
+        assert_eq!(average_at_eight.radiation, 500.0);
         let status = snapshot.status();
         assert_eq!(status.local_time, "23:46");
         assert_eq!(status.condition, "Overcast");
         assert_eq!(status.cloud_cover, 100);
         assert!(!status.is_day);
+    }
+
+    #[test]
+    fn light_history_averages_each_local_hour_and_uses_a_shared_scale() {
+        const DAY: i64 = 24 * 60 * 60;
+        let hourly = HourlyWeather {
+            time: vec![12 * 3_600, DAY + 12 * 3_600, 2 * DAY + 12 * 3_600],
+            shortwave_radiation: vec![Some(300.0), Some(600.0), Some(0.0)],
+        };
+
+        let history = light_history(
+            &hourly,
+            0,
+            2 * DAY..3 * DAY,
+            2 * DAY + 6 * 3_600..2 * DAY + 18 * 3_600,
+            0,
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(history.average_days, 3);
+        assert_eq!(history.average_points.len(), 1);
+        assert_eq!(history.average_points[0].time, "12:00");
+        assert_eq!(history.average_points[0].radiation, 300.0);
+        assert_eq!(history.average_points[0].x, 176.0);
+        assert_eq!(history.average_points[0].y, 12.0);
+        assert_eq!(history.max_radiation, 300);
+        assert_eq!(history.points[0].radiation, 0.0);
+        assert_eq!(history.points[0].y, 120.0);
     }
 
     #[test]
