@@ -128,10 +128,34 @@ struct ScheduleForm {
     sat: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct SolarScheduleForm {
+    name: String,
+    event: String,
+    offset_minutes: i16,
+    action: String,
+    sun: Option<String>,
+    mon: Option<String>,
+    tue: Option<String>,
+    wed: Option<String>,
+    thu: Option<String>,
+    fri: Option<String>,
+    sat: Option<String>,
+}
+
 #[derive(Debug)]
 struct ScheduleInput {
     name: String,
     minute_of_day: u16,
+    turn_on: bool,
+    weekdays: [bool; 7],
+}
+
+#[derive(Debug)]
+struct SolarScheduleInput {
+    name: String,
+    event: SolarEvent,
+    offset_minutes: i16,
     turn_on: bool,
     weekdays: [bool; 7],
 }
@@ -149,9 +173,12 @@ struct ScheduleView {
     name: String,
     enabled: bool,
     editable: bool,
+    solar_editable: bool,
     time: String,
     action: &'static str,
     action_on: bool,
+    solar_event: &'static str,
+    solar_offset: i16,
     weekday_summary: String,
     hour: u16,
     minute: u16,
@@ -279,6 +306,10 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .route(
             "/plugs/{address}/schedules/{id}",
             post(edit_schedule).delete(delete_schedule),
+        )
+        .route(
+            "/plugs/{address}/schedules/{id}/solar",
+            post(edit_solar_schedule),
         )
         .route(
             "/plugs/{address}/schedules/{id}/enabled",
@@ -474,6 +505,28 @@ async fn edit_schedule(
     render_schedule_panel(&state, &panel)
 }
 
+async fn edit_solar_schedule(
+    State(state): State<Arc<AppState>>,
+    Path((address, id)): Path<(IpAddr, String)>,
+    Form(form): Form<SolarScheduleForm>,
+) -> Result<Html<String>, AppError> {
+    let input = SolarScheduleInput::try_from(form)?;
+    let client = state.client.clone();
+    let panel = task::spawn_blocking(move || {
+        let rules = client.get_schedule_rules(address)?;
+        let rule = find_schedule(rules, &id)?;
+        if !is_editable_solar_schedule(&rule) {
+            return Err(AppError::bad_request(
+                "only start-only sunrise and sunset schedules can be edited here",
+            ));
+        }
+        client.edit_schedule_rule(address, &input.apply_to(rule))?;
+        load_schedule_panel(&client, address)
+    })
+    .await??;
+    render_schedule_panel(&state, &panel)
+}
+
 async fn delete_schedule(
     State(state): State<Arc<AppState>>,
     Path((address, id)): Path<(IpAddr, String)>,
@@ -657,15 +710,7 @@ impl TryFrom<ScheduleForm> for ScheduleInput {
     type Error = AppError;
 
     fn try_from(form: ScheduleForm) -> Result<Self, Self::Error> {
-        let name = form.name.trim().to_owned();
-        if name.is_empty() {
-            return Err(AppError::bad_request("schedule name cannot be empty"));
-        }
-        if name.chars().count() > 64 {
-            return Err(AppError::bad_request(
-                "schedule name cannot exceed 64 characters",
-            ));
-        }
+        let name = validated_schedule_name(&form.name)?;
         if form.hour > 23 || form.minute > 59 {
             return Err(AppError::bad_request(
                 "schedule time must be between 00:00 and 23:59",
@@ -676,20 +721,9 @@ impl TryFrom<ScheduleForm> for ScheduleInput {
             "off" => false,
             _ => return Err(AppError::bad_request("schedule action must be on or off")),
         };
-        let weekdays = [
-            form.sun.is_some(),
-            form.mon.is_some(),
-            form.tue.is_some(),
-            form.wed.is_some(),
-            form.thu.is_some(),
-            form.fri.is_some(),
-            form.sat.is_some(),
-        ];
-        if !weekdays.iter().any(|selected| *selected) {
-            return Err(AppError::bad_request(
-                "select at least one weekday for the schedule",
-            ));
-        }
+        let weekdays = schedule_weekdays([
+            form.sun, form.mon, form.tue, form.wed, form.thu, form.fri, form.sat,
+        ])?;
 
         Ok(Self {
             name,
@@ -743,6 +777,81 @@ impl ScheduleInput {
         rule.day = 0;
         rule
     }
+}
+
+impl TryFrom<SolarScheduleForm> for SolarScheduleInput {
+    type Error = AppError;
+
+    fn try_from(form: SolarScheduleForm) -> Result<Self, Self::Error> {
+        let name = validated_schedule_name(&form.name)?;
+        let event = match form.event.as_str() {
+            "sunrise" => SolarEvent::Sunrise,
+            "sunset" => SolarEvent::Sunset,
+            _ => {
+                return Err(AppError::bad_request(
+                    "solar event must be sunrise or sunset",
+                ))
+            }
+        };
+        if !(-180..=180).contains(&form.offset_minutes) {
+            return Err(AppError::bad_request(
+                "solar offset must be between -180 and 180 minutes",
+            ));
+        }
+        let turn_on = match form.action.as_str() {
+            "on" => true,
+            "off" => false,
+            _ => return Err(AppError::bad_request("schedule action must be on or off")),
+        };
+        let weekdays = schedule_weekdays([
+            form.sun, form.mon, form.tue, form.wed, form.thu, form.fri, form.sat,
+        ])?;
+        Ok(Self {
+            name,
+            event,
+            offset_minutes: form.offset_minutes,
+            turn_on,
+            weekdays,
+        })
+    }
+}
+
+impl SolarScheduleInput {
+    fn apply_to(&self, mut rule: ScheduleRule) -> ScheduleRule {
+        rule.name.clone_from(&self.name);
+        rule.repeat = true;
+        rule.weekdays = self.weekdays;
+        rule.stime_opt = match self.event {
+            SolarEvent::Sunrise => 1,
+            SolarEvent::Sunset => 2,
+        };
+        rule.sact = i8::from(self.turn_on);
+        rule.soffset = Some(self.offset_minutes);
+        rule
+    }
+}
+
+fn validated_schedule_name(value: &str) -> Result<String, AppError> {
+    let name = value.trim().to_owned();
+    if name.is_empty() {
+        return Err(AppError::bad_request("schedule name cannot be empty"));
+    }
+    if name.chars().count() > 64 {
+        return Err(AppError::bad_request(
+            "schedule name cannot exceed 64 characters",
+        ));
+    }
+    Ok(name)
+}
+
+fn schedule_weekdays(values: [Option<String>; 7]) -> Result<[bool; 7], AppError> {
+    let weekdays = values.map(|value| value.is_some());
+    if !weekdays.iter().any(|selected| *selected) {
+        return Err(AppError::bad_request(
+            "select at least one weekday for the schedule",
+        ));
+    }
+    Ok(weekdays)
 }
 
 async fn load_automation_panel(
@@ -868,10 +977,16 @@ fn schedule_view(rule: ScheduleRule) -> ScheduleView {
         .filter_map(|(selected, name)| selected.then_some(name))
         .collect();
     let editable = is_editable_schedule(&rule);
-    let time = if rule.stime_opt == 0 && rule.smin < 24 * 60 {
-        format!("{:02}:{:02}", rule.smin / 60, rule.smin % 60)
-    } else {
-        "Solar/advanced".to_owned()
+    let solar_editable = is_editable_solar_schedule(&rule);
+    let (solar_event, event_name) = match rule.stime_opt {
+        1 => ("sunrise", "sunrise"),
+        2 => ("sunset", "sunset"),
+        _ => ("", ""),
+    };
+    let time = match rule.stime_opt {
+        0 if rule.smin < 24 * 60 => format!("{:02}:{:02}", rule.smin / 60, rule.smin % 60),
+        1 | 2 => solar_schedule_time(event_name, rule.soffset.unwrap_or_default()),
+        _ => "Solar/advanced".to_owned(),
     };
 
     ScheduleView {
@@ -879,6 +994,7 @@ fn schedule_view(rule: ScheduleRule) -> ScheduleView {
         name: rule.name,
         enabled: rule.enabled,
         editable,
+        solar_editable,
         time,
         action: match rule.sact {
             1 => "Turn on",
@@ -886,6 +1002,8 @@ fn schedule_view(rule: ScheduleRule) -> ScheduleView {
             _ => "Advanced action",
         },
         action_on: rule.sact == 1,
+        solar_event,
+        solar_offset: rule.soffset.unwrap_or_default(),
         weekday_summary: if rule.weekdays.iter().all(|selected| *selected) {
             "Every day".to_owned()
         } else if rule.weekdays == [false, true, true, true, true, true, false] {
@@ -914,6 +1032,24 @@ fn is_editable_schedule(rule: &ScheduleRule) -> bool {
         && rule.smin < 24 * 60
         && matches!(rule.sact, 0 | 1)
         && rule.etime_opt == -1
+}
+
+fn is_editable_solar_schedule(rule: &ScheduleRule) -> bool {
+    rule.id.as_ref().is_some_and(|id| !id.is_empty())
+        && rule.repeat
+        && matches!(rule.stime_opt, 1 | 2)
+        && matches!(rule.sact, 0 | 1)
+        && rule.etime_opt == -1
+}
+
+fn solar_schedule_time(event: &str, offset_minutes: i16) -> String {
+    match offset_minutes.cmp(&0) {
+        std::cmp::Ordering::Less => {
+            format!("{} min before {event}", offset_minutes.unsigned_abs())
+        }
+        std::cmp::Ordering::Equal => event.to_owned(),
+        std::cmp::Ordering::Greater => format!("{offset_minutes} min after {event}"),
+    }
 }
 
 fn render_schedule_panel(
@@ -1251,9 +1387,12 @@ mod tests {
                 name: "<Morning>".to_owned(),
                 enabled: true,
                 editable: true,
+                solar_editable: false,
                 time: "07:30".to_owned(),
                 action: "Turn on",
                 action_on: true,
+                solar_event: "",
+                solar_offset: 0,
                 weekday_summary: "Mon, Tue".to_owned(),
                 hour: 7,
                 minute: 30,
@@ -1281,5 +1420,111 @@ mod tests {
         assert!(fragment.contains("hx-target=\"closest .device-pane\""));
         assert!(fragment.contains("&lt;Morning&gt;"));
         assert!(!fragment.contains("<Morning>"));
+    }
+
+    #[test]
+    fn solar_schedule_edit_preserves_unexposed_firmware_fields() {
+        let mut extra = serde_json::Map::new();
+        extra.insert("firmware_field".to_owned(), serde_json::json!(7));
+        let rule = ScheduleRule {
+            id: Some("solar-id".to_owned()),
+            name: "Schedule Rule".to_owned(),
+            enabled: false,
+            repeat: true,
+            weekdays: [true; 7],
+            stime_opt: 2,
+            smin: 1_184,
+            sact: 1,
+            etime_opt: -1,
+            emin: 17,
+            eact: -1,
+            soffset: Some(-30),
+            eoffset: Some(9),
+            year: 2026,
+            month: 8,
+            day: 24,
+            latitude: 46.4,
+            longitude: -81.0,
+            force: 3,
+            extra,
+        };
+        let input = SolarScheduleInput::try_from(SolarScheduleForm {
+            name: "Morning light".to_owned(),
+            event: "sunrise".to_owned(),
+            offset_minutes: 15,
+            action: "off".to_owned(),
+            sun: None,
+            mon: Some("on".to_owned()),
+            tue: Some("on".to_owned()),
+            wed: Some("on".to_owned()),
+            thu: Some("on".to_owned()),
+            fri: Some("on".to_owned()),
+            sat: None,
+        })
+        .unwrap();
+
+        let updated = input.apply_to(rule);
+
+        assert_eq!(updated.name, "Morning light");
+        assert_eq!(updated.stime_opt, 1);
+        assert_eq!(updated.soffset, Some(15));
+        assert_eq!(updated.sact, 0);
+        assert_eq!(
+            updated.weekdays,
+            [false, true, true, true, true, true, false]
+        );
+        assert!(!updated.enabled);
+        assert_eq!(updated.smin, 1_184);
+        assert_eq!(updated.emin, 17);
+        assert_eq!(updated.eoffset, Some(9));
+        assert_eq!(updated.year, 2026);
+        assert_eq!(updated.force, 3);
+        assert_eq!(updated.extra["firmware_field"], serde_json::json!(7));
+    }
+
+    #[test]
+    fn solar_schedule_view_describes_and_edits_sunset_offset() {
+        let rule = ScheduleRule {
+            id: Some("solar-id".to_owned()),
+            name: "Schedule Rule".to_owned(),
+            enabled: true,
+            repeat: true,
+            weekdays: [true; 7],
+            stime_opt: 2,
+            smin: 1_184,
+            sact: 1,
+            etime_opt: -1,
+            emin: 0,
+            eact: -1,
+            soffset: Some(-30),
+            eoffset: Some(0),
+            year: 0,
+            month: 0,
+            day: 0,
+            latitude: 0.0,
+            longitude: 0.0,
+            force: 0,
+            extra: Default::default(),
+        };
+        let panel = SchedulePanel {
+            address: "192.0.2.1".to_owned(),
+            enabled: true,
+            rules: vec![schedule_view(rule)],
+        };
+
+        let fragment = templates()
+            .unwrap()
+            .get_template("schedule-panel.html")
+            .unwrap()
+            .render(context! { panel })
+            .unwrap();
+
+        assert!(fragment.contains("30 min before sunset · Turn on · Every day"));
+        assert!(fragment.contains("Edit solar schedule"));
+        assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/schedules/solar-id/solar\""));
+        assert!(fragment.contains("value=\"sunset\" selected"));
+        assert!(fragment.contains("name=\"offset_minutes\""));
+        assert!(fragment.contains("value=\"-30\""));
+        assert!(!fragment.contains("not rewritten"));
     }
 }

@@ -65,6 +65,41 @@
             <button class="small-button" type="submit">Save schedule</button>
           </form>
         </details>
+      {% elif rule.solar_editable %}
+        <details>
+          <summary>Edit solar schedule</summary>
+          <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/schedules/{{ rule.id }}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+            <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
+            <div class="form-row">
+              <label>Event
+                <select name="event">
+                  <option value="sunrise" {% if rule.solar_event == "sunrise" %}selected{% endif %}>Sunrise</option>
+                  <option value="sunset" {% if rule.solar_event == "sunset" %}selected{% endif %}>Sunset</option>
+                </select>
+              </label>
+              <label>Offset in minutes
+                <input name="offset_minutes" type="number" min="-180" max="180" required value="{{ rule.solar_offset }}">
+              </label>
+            </div>
+            <label>Action
+              <select name="action">
+                <option value="on" {% if rule.action_on %}selected{% endif %}>Turn on</option>
+                <option value="off" {% if not rule.action_on %}selected{% endif %}>Turn off</option>
+              </select>
+            </label>
+            <div class="weekdays">
+              <label class="weekday"><input type="checkbox" name="sun" {% if rule.sun %}checked{% endif %}>S</label>
+              <label class="weekday"><input type="checkbox" name="mon" {% if rule.mon %}checked{% endif %}>M</label>
+              <label class="weekday"><input type="checkbox" name="tue" {% if rule.tue %}checked{% endif %}>T</label>
+              <label class="weekday"><input type="checkbox" name="wed" {% if rule.wed %}checked{% endif %}>W</label>
+              <label class="weekday"><input type="checkbox" name="thu" {% if rule.thu %}checked{% endif %}>T</label>
+              <label class="weekday"><input type="checkbox" name="fri" {% if rule.fri %}checked{% endif %}>F</label>
+              <label class="weekday"><input type="checkbox" name="sat" {% if rule.sat %}checked{% endif %}>S</label>
+            </div>
+            <span class="schedule-status">Use a negative offset for before the event.</span>
+            <button class="small-button" type="submit">Save solar schedule</button>
+          </form>
+        </details>
       {% else %}
         <p class="advanced-note">This advanced rule can be enabled or deleted here, but not rewritten.</p>
       {% endif %}
