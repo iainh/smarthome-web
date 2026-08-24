@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::io;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -148,18 +149,22 @@ impl AutomationEngine {
         Ok(self.fetch_weather(coordinate).await?.status())
     }
 
-    pub async fn run(self: std::sync::Arc<Self>, client: SmartHomeClient) {
+    pub async fn run(
+        self: std::sync::Arc<Self>,
+        client: SmartHomeClient,
+        device_addresses: Vec<IpAddr>,
+    ) {
         let mut interval = tokio::time::interval(EVALUATION_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            if let Err(error) = self.evaluate(&client).await {
+            if let Err(error) = self.evaluate(&client, &device_addresses).await {
                 eprintln!("automation evaluation failed: {error}");
             }
         }
     }
 
-    async fn evaluate(&self, client: &SmartHomeClient) -> Result<()> {
+    async fn evaluate(&self, client: &SmartHomeClient, device_addresses: &[IpAddr]) -> Result<()> {
         let rules = {
             let store = self.lock_store()?;
             store.rules.clone()
@@ -169,8 +174,9 @@ impl AutomationEngine {
         }
 
         let discovery_client = client.clone();
+        let device_addresses = device_addresses.to_vec();
         let plugs = tokio::task::spawn_blocking(move || {
-            discovery_client.get_inventory(Duration::from_secs(3))
+            discovery_client.get_inventory_from(&device_addresses, Duration::from_secs(3))
         })
         .await??;
         let mut plugs: HashMap<_, _> = plugs

@@ -26,6 +26,7 @@ struct AppState {
     client: SmartHomeClient,
     templates: Environment<'static>,
     automations: Arc<AutomationEngine>,
+    device_addresses: Vec<IpAddr>,
 }
 
 #[derive(Debug, Serialize)]
@@ -229,13 +230,19 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     let automation_path = std::env::var_os("AUTOMATIONS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("automations.json"));
+    let device_addresses = match std::env::var("DEVICE_ADDRESSES") {
+        Ok(value) => parse_device_addresses(&value)?,
+        Err(std::env::VarError::NotPresent) => Vec::new(),
+        Err(error) => return Err(error.into()),
+    };
     let automations = Arc::new(AutomationEngine::load(automation_path)?);
     let state = Arc::new(AppState {
         client: SmartHomeClient::new(),
         templates: templates()?,
         automations: automations.clone(),
+        device_addresses: device_addresses.clone(),
     });
-    tokio::spawn(automations.run(state.client.clone()));
+    tokio::spawn(automations.run(state.client.clone(), device_addresses));
     let app = Router::new()
         .route("/", get(index))
         .route("/refresh", post(refresh))
@@ -289,7 +296,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    let plugs = discover(state.client.clone()).await?;
+    let plugs = discover(state.client.clone(), state.device_addresses.clone()).await?;
     let page = state
         .templates
         .get_template("index.html")?
@@ -298,7 +305,7 @@ async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppEr
 }
 
 async fn refresh(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    let plugs = discover(state.client.clone()).await?;
+    let plugs = discover(state.client.clone(), state.device_addresses.clone()).await?;
     let fragment = state
         .templates
         .get_template("plug-list.html")?
@@ -511,9 +518,27 @@ async fn set_schedules_enabled(
     render_schedule_panel(&state, &panel)
 }
 
-async fn discover(client: SmartHomeClient) -> Result<Vec<PlugView>, AppError> {
-    let plugs = task::spawn_blocking(move || client.get_inventory(DISCOVERY_TIMEOUT)).await??;
+async fn discover(
+    client: SmartHomeClient,
+    device_addresses: Vec<IpAddr>,
+) -> Result<Vec<PlugView>, AppError> {
+    let plugs = task::spawn_blocking(move || {
+        client.get_inventory_from(&device_addresses, DISCOVERY_TIMEOUT)
+    })
+    .await??;
     Ok(plugs.into_iter().map(PlugView::from).collect())
+}
+
+fn parse_device_addresses(value: &str) -> Result<Vec<IpAddr>, std::net::AddrParseError> {
+    let mut addresses = value
+        .split(',')
+        .map(str::trim)
+        .filter(|address| !address.is_empty())
+        .map(str::parse)
+        .collect::<Result<Vec<_>, _>>()?;
+    addresses.sort_unstable();
+    addresses.dedup();
+    Ok(addresses)
 }
 
 async fn get_plug(client: SmartHomeClient, address: IpAddr) -> Result<SmartPlug, AppError> {
@@ -957,6 +982,18 @@ fn templates() -> Result<Environment<'static>, minijinja::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configured_device_addresses_are_trimmed_sorted_and_deduplicated() {
+        assert_eq!(
+            parse_device_addresses("192.0.2.2, 192.0.2.1,192.0.2.2").unwrap(),
+            vec![
+                "192.0.2.1".parse::<IpAddr>().unwrap(),
+                "192.0.2.2".parse::<IpAddr>().unwrap(),
+            ]
+        );
+        assert!(parse_device_addresses("192.0.2.1,not-an-address").is_err());
+    }
 
     #[test]
     fn page_renders_controls_and_escapes_device_alias() {

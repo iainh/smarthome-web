@@ -398,6 +398,24 @@ impl SmartHomeClient {
         Ok(devices)
     }
 
+    /// Queries configured devices directly, or falls back to broadcast discovery when empty.
+    pub fn get_inventory_from(
+        &self,
+        addresses: &[IpAddr],
+        discovery_timeout: Duration,
+    ) -> Result<Vec<SmartPlug>> {
+        if addresses.is_empty() {
+            return self.get_inventory(discovery_timeout);
+        }
+
+        let mut devices: Vec<_> = addresses
+            .iter()
+            .filter_map(|address| self.get_sysinfo(*address).ok())
+            .collect();
+        devices.sort_by_key(|device| device.address);
+        Ok(devices)
+    }
+
     pub fn get_sysinfo(&self, address: IpAddr) -> Result<SmartPlug> {
         let response = self.query_command(address, "system", "get_sysinfo", json!({}))?;
         parse_sysinfo(response, address)
