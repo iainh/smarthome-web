@@ -861,7 +861,11 @@ fn schedule_view(rule: ScheduleRule) -> ScheduleView {
             _ => "Advanced action",
         },
         action_on: rule.sact == 1,
-        weekday_summary: if selected_days.is_empty() {
+        weekday_summary: if rule.weekdays.iter().all(|selected| *selected) {
+            "Every day".to_owned()
+        } else if rule.weekdays == [false, true, true, true, true, true, false] {
+            "Weekdays".to_owned()
+        } else if selected_days.is_empty() {
             "No weekdays".to_owned()
         } else {
             selected_days.join(", ")
@@ -1208,7 +1212,7 @@ mod tests {
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/schedules/rule-id\""));
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/schedules/rule-id\""));
         assert!(fragment.contains("id=\"device-pane\""));
-        assert!(fragment.contains("class=\"device-pane is-open\""));
+        assert!(fragment.contains("<dialog id=\"device-pane\" class=\"device-pane\""));
         assert!(fragment.contains("hx-target=\"closest .device-pane\""));
         assert!(fragment.contains("&lt;Morning&gt;"));
         assert!(!fragment.contains("<Morning>"));

@@ -10,11 +10,14 @@
       <span class="state state-off">Off</span>
     {% endif %}
   </div>
-  <dl>
-    <dt>Address</dt><dd>{{ plug.address }}</dd>
-    <dt>Software</dt><dd>{{ plug.software_version }}</dd>
-    <dt>Device ID</dt><dd>{{ plug.device_id }}</dd>
-  </dl>
+  <details class="device-details">
+    <summary>Device details</summary>
+    <dl>
+      <dt>Address</dt><dd>{{ plug.address }}</dd>
+      <dt>Software</dt><dd>{{ plug.software_version }}</dd>
+      <dt>Device ID</dt><dd>{{ plug.device_id }}</dd>
+    </dl>
+  </details>
   <form hx-post="/plugs/{{ plug.address }}/relay" hx-target="closest .plug-card" hx-swap="outerHTML" hx-disabled-elt="find button">
     {% if plug.relay_on %}
       <button class="toggle toggle-off" type="submit" name="on" value="false"><span class="button-label">Turn off</span></button>
@@ -23,7 +26,7 @@
     {% endif %}
   </form>
   <div class="plug-actions">
-    <button type="button" hx-get="/plugs/{{ plug.address }}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+    <button class="automation-button" type="button" hx-get="/plugs/{{ plug.address }}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
       <span class="button-label">Automations</span>
     </button>
     <button type="button" hx-get="/plugs/{{ plug.address }}/countdown" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">

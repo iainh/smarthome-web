@@ -1,10 +1,10 @@
-<aside id="device-pane" class="device-pane is-open" aria-label="Automations for {{ panel.address }}">
+<dialog id="device-pane" class="device-pane" aria-label="Automations for {{ panel.address }}">
   <div class="pane-header">
     <div>
       <h2>Automations</h2>
       <span class="schedule-status">{{ panel.address }}</span>
     </div>
-    <button class="pane-close" type="button" aria-label="Close automation pane" onclick="this.closest('.device-pane').classList.remove('is-open')">×</button>
+    <button class="pane-close" type="button" aria-label="Close automation pane" onclick="this.closest('dialog').close()">×</button>
   </div>
 
   <p class="automation-intro">Rules are evaluated every five minutes using the plug's location and Open-Meteo. This server must remain running.</p>
@@ -85,4 +85,4 @@
   {% else %}
     <p class="advanced-note">Configure this plug's location in the Kasa app before adding weather automations.</p>
   {% endif %}
-</aside>
+</dialog>

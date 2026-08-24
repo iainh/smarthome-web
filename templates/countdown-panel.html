@@ -1,10 +1,10 @@
-<aside id="device-pane" class="device-pane is-open" aria-label="Timer for {{ panel.address }}">
+<dialog id="device-pane" class="device-pane" aria-label="Timer for {{ panel.address }}">
   <div class="pane-header">
     <div>
       <h2>Countdown timer</h2>
       <span class="schedule-status">{{ panel.address }}</span>
     </div>
-    <button class="pane-close" type="button" aria-label="Close timer pane" onclick="this.closest('.device-pane').classList.remove('is-open')">×</button>
+    <button class="pane-close" type="button" aria-label="Close timer pane" onclick="this.closest('dialog').close()">×</button>
   </div>
 
   {% for rule in panel.rules %}
@@ -36,4 +36,4 @@
     </label>
     <button class="small-button" type="submit">Start timer</button>
   </form>
-</aside>
+</dialog>

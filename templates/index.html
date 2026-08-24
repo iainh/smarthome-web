@@ -35,10 +35,14 @@
     dd { margin: 0; overflow-wrap: anywhere; }
     .toggle { width: 100%; color: #fff; background: #2563eb; }
     .toggle-off { background: #dc2626; }
-    .plug-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+    .device-details { border-top: 1px solid #334155; padding-top: .75rem; }
+    .device-details dl { margin-top: .75rem; }
+    .plug-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
     .plug-actions button { color: #cbd5e1; background: #334155; }
-    .device-pane { position: fixed; z-index: 10; inset: 0 0 0 auto; width: min(30rem, 100%); overflow-y: auto; padding: 1.25rem; border-left: 1px solid #334155; background: #0f172a; box-shadow: -1rem 0 3rem rgb(0 0 0 / 45%); }
-    .device-pane:not(.is-open) { display: none; }
+    .plug-actions .automation-button { grid-column: 1 / -1; color: #fff; background: #475569; }
+    .device-pane { position: fixed; z-index: 10; inset: 0 0 0 auto; width: min(32rem, 100%); height: 100%; max-width: none; max-height: none; margin: 0 0 0 auto; overflow-y: auto; padding: 1.25rem; border: 0; border-left: 1px solid #334155; border-radius: 0; color: #e2e8f0; background: #0f172a; box-shadow: -1rem 0 3rem rgb(0 0 0 / 45%); }
+    .device-pane::backdrop { background: rgb(2 6 23 / 68%); backdrop-filter: blur(2px); }
+    .device-pane:not([open]) { display: none; }
     .pane-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
     .pane-header h2 { margin: 0; font-size: 1.3rem; }
     .pane-close { padding: .35rem .7rem; color: #cbd5e1; background: #334155; font-size: 1.4rem; line-height: 1; }
@@ -53,7 +57,11 @@
     .danger { background: #991b1b; }
     details { border-radius: .6rem; }
     summary { color: #cbd5e1; cursor: pointer; font-size: .82rem; font-weight: 700; }
+    .device-pane details { padding: .75rem; border: 1px solid #334155; background: #111c30; }
+    .device-pane details + details { margin-top: .65rem; }
+    .device-pane summary { font-size: .9rem; }
     .schedule-form { display: grid; gap: .7rem; padding-top: .7rem; }
+    .schedule-form > .small-button { color: #fff; background: #2563eb; }
     .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
     label { display: grid; gap: .25rem; color: #94a3b8; font-size: .75rem; }
     input, select { width: 100%; border: 1px solid #475569; border-radius: .45rem; padding: .5rem; color: #e2e8f0; background: #0f172a; font: inherit; }
@@ -76,7 +84,7 @@
     .htmx-request .button-label { opacity: .5; }
     @media (max-width: 36rem) {
       header { align-items: stretch; flex-direction: column; }
-      .plug-actions { grid-template-columns: 1fr; }
+      .plug-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>
@@ -93,10 +101,15 @@
     </header>
     {% include "plug-list.html" %}
   </main>
-  <aside id="device-pane" class="device-pane" aria-label="Device controls"></aside>
+  <dialog id="device-pane" class="device-pane" aria-label="Device controls"></dialog>
   <script>
     document.body.addEventListener("htmx:responseError", function (event) {
       window.alert(event.detail.xhr.responseText || "The device request failed.");
+    });
+    document.body.addEventListener("htmx:afterSwap", function (event) {
+      if (event.detail.target.id === "device-pane") {
+        document.getElementById("device-pane").showModal();
+      }
     });
   </script>
 </body>
