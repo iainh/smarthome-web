@@ -3,7 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Remember, control, group, and automate Kasa smart plugs on your local network.">
+  <meta name="theme-color" content="#0f172a" id="theme-color">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Smart Plugs">
+  <meta name="application-name" content="Smart Plugs">
+  <meta name="msapplication-TileColor" content="#0f172a">
+  <meta name="msapplication-TileImage" content="/assets/icons/icon-144.png">
   <title>Kasa Smart Plug Manager</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/assets/icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/assets/icons/icon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="/assets/icons/icon-16.png" sizes="16x16" type="image/png">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/assets/icons/icon-180.png" sizes="180x180">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <script>
     try {
@@ -78,7 +93,8 @@
     button { border: 0; border-radius: .75rem; padding: .75rem 1rem; font-family: inherit; font-size: 10pt; font-weight: 700; cursor: pointer; transition: transform .15s, opacity .15s; }
     button:hover { transform: translateY(-1px); }
     button:disabled { opacity: .55; }
-    .scan, .theme-toggle { color: var(--foreground); background: var(--control-surface); white-space: nowrap; }
+    .scan, .theme-toggle, .install-app { color: var(--foreground); background: var(--control-surface); white-space: nowrap; }
+    .install-app { color: #fff; background: #0369a1; }
     .add-group { color: #fff; background: #2563eb; }
     .device-list, .device-section { display: grid; gap: 1rem; }
     .device-list { gap: 2rem; }
@@ -206,6 +222,7 @@
         <p class="subtitle">Remember and control Kasa plugs on your local network.</p>
       </div>
       <div class="header-actions">
+        <button class="install-app" type="button" hidden>Install app</button>
         <button class="theme-toggle" type="button">
           <span class="theme-label">Switch to dark theme</span>
         </button>
@@ -223,12 +240,31 @@
   <script>
     const paneWidthKey = "kasa-device-pane-width";
     const themeKey = "kasa-theme";
+    const installButton = document.querySelector(".install-app");
+    let installPrompt = null;
     let resizingPane = null;
 
     function updateThemeButton() {
       const dark = document.documentElement.dataset.theme === "dark";
       document.querySelector(".theme-label").textContent = dark ? "Switch to light theme" : "Switch to dark theme";
+      document.getElementById("theme-color").content = dark ? "#0f172a" : "#f8fafc";
     }
+
+    window.addEventListener("beforeinstallprompt", function (event) {
+      event.preventDefault();
+      installPrompt = event;
+      installButton.hidden = false;
+    });
+    window.addEventListener("appinstalled", function () {
+      installPrompt = null;
+      installButton.hidden = true;
+    });
+    installButton.addEventListener("click", async function () {
+      if (!installPrompt) return;
+      await installPrompt.prompt();
+      installPrompt = null;
+      installButton.hidden = true;
+    });
 
     document.querySelector(".theme-toggle").addEventListener("click", function () {
       const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
@@ -304,6 +340,14 @@
       savePaneWidth(pane);
       event.preventDefault();
     });
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/service-worker.js").catch(function (error) {
+          console.warn("Service worker registration failed", error);
+        });
+      });
+    }
   </script>
 </body>
 </html>

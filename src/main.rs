@@ -5,8 +5,9 @@ mod group;
 use automation::{
     AutomationEngine, AutomationRule, AutomationTrigger, NewAutomation, SolarEvent, WeatherStatus,
 };
+use axum::body::Body;
 use axum::extract::{Form, Path, State};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -346,6 +347,11 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     tokio::spawn(purge_weather_history(database));
     let app = Router::new()
         .route("/", get(index))
+        .route("/favicon.ico", get(favicon))
+        .route("/manifest.webmanifest", get(web_manifest))
+        .route("/service-worker.js", get(service_worker))
+        .route("/offline.html", get(offline_page))
+        .route("/assets/icons/{filename}", get(icon_asset))
         .route("/scan", post(scan))
         .route("/devices/{device_id}", axum::routing::delete(remove_device))
         .route("/groups", post(create_group))
@@ -412,6 +418,87 @@ async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppEr
         .get_template("index.html")?
         .render(context! { groups => view.groups, plugs => view.plugs, notice => view.notice })?;
     Ok(Html(page))
+}
+
+async fn favicon() -> Response {
+    static_response(
+        "image/x-icon",
+        include_bytes!("../assets/icons/favicon.ico"),
+        true,
+    )
+}
+
+async fn web_manifest() -> Response {
+    static_response(
+        "application/manifest+json",
+        include_bytes!("../pwa/manifest.webmanifest"),
+        false,
+    )
+}
+
+async fn service_worker() -> Response {
+    let mut response = static_response(
+        "text/javascript; charset=utf-8",
+        include_bytes!("../pwa/service-worker.js"),
+        false,
+    );
+    response.headers_mut().insert(
+        header::HeaderName::from_static("service-worker-allowed"),
+        header::HeaderValue::from_static("/"),
+    );
+    response
+}
+
+async fn offline_page() -> Response {
+    static_response(
+        "text/html; charset=utf-8",
+        include_bytes!("../pwa/offline.html"),
+        false,
+    )
+}
+
+async fn icon_asset(Path(filename): Path<String>) -> Response {
+    let asset: Option<(&str, &[u8])> = match filename.as_str() {
+        "icon.svg" => Some(("image/svg+xml", include_bytes!("../assets/icons/icon.svg"))),
+        "icon-16.png" => Some(("image/png", include_bytes!("../assets/icons/icon-16.png"))),
+        "icon-32.png" => Some(("image/png", include_bytes!("../assets/icons/icon-32.png"))),
+        "icon-48.png" => Some(("image/png", include_bytes!("../assets/icons/icon-48.png"))),
+        "icon-72.png" => Some(("image/png", include_bytes!("../assets/icons/icon-72.png"))),
+        "icon-96.png" => Some(("image/png", include_bytes!("../assets/icons/icon-96.png"))),
+        "icon-128.png" => Some(("image/png", include_bytes!("../assets/icons/icon-128.png"))),
+        "icon-144.png" => Some(("image/png", include_bytes!("../assets/icons/icon-144.png"))),
+        "icon-152.png" => Some(("image/png", include_bytes!("../assets/icons/icon-152.png"))),
+        "icon-180.png" => Some(("image/png", include_bytes!("../assets/icons/icon-180.png"))),
+        "icon-192.png" => Some(("image/png", include_bytes!("../assets/icons/icon-192.png"))),
+        "icon-384.png" => Some(("image/png", include_bytes!("../assets/icons/icon-384.png"))),
+        "icon-512.png" => Some(("image/png", include_bytes!("../assets/icons/icon-512.png"))),
+        "icon-maskable-192.png" => Some((
+            "image/png",
+            include_bytes!("../assets/icons/icon-maskable-192.png"),
+        )),
+        "icon-maskable-512.png" => Some((
+            "image/png",
+            include_bytes!("../assets/icons/icon-maskable-512.png"),
+        )),
+        _ => None,
+    };
+    asset.map_or_else(
+        || StatusCode::NOT_FOUND.into_response(),
+        |(content_type, body)| static_response(content_type, body, true),
+    )
+}
+
+fn static_response(content_type: &str, body: &'static [u8], immutable: bool) -> Response {
+    let cache_control = if immutable {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    Response::builder()
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, cache_control)
+        .body(Body::from(body))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 async fn scan(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
@@ -1609,6 +1696,30 @@ mod tests {
             relay_on,
             latitude: None,
             longitude: None,
+        }
+    }
+
+    #[test]
+    fn web_manifest_has_installable_and_maskable_icons() {
+        let manifest: serde_json::Value =
+            serde_json::from_slice(include_bytes!("../pwa/manifest.webmanifest")).unwrap();
+        assert_eq!(manifest["display"], "standalone");
+        assert_eq!(manifest["start_url"], "/");
+
+        let icons = manifest["icons"].as_array().unwrap();
+        for size in ["192x192", "512x512"] {
+            assert!(icons.iter().any(|icon| {
+                icon["sizes"] == size
+                    && icon["purpose"]
+                        .as_str()
+                        .is_some_and(|purpose| purpose.contains("any"))
+            }));
+            assert!(icons.iter().any(|icon| {
+                icon["sizes"] == size
+                    && icon["purpose"]
+                        .as_str()
+                        .is_some_and(|purpose| purpose.contains("maskable"))
+            }));
         }
     }
 

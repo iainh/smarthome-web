@@ -8,6 +8,8 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src/*.rs ./src/
 COPY templates/*.html ./templates/
+COPY assets/icons/ ./assets/icons/
+COPY pwa/ ./pwa/
 RUN cargo build --locked --release
 
 FROM debian:bookworm-slim
