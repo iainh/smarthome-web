@@ -26,12 +26,15 @@ use tddp_client::{CountdownRule, RuleSet, ScheduleRule, SmartHomeClient, SmartPl
 use tokio::task;
 
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
+const WEATHER_HISTORY_RETENTION: Duration = Duration::from_secs(90 * 24 * 60 * 60);
+const WEATHER_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 struct AppState {
     client: SmartHomeClient,
     templates: Environment<'static>,
     automations: Arc<AutomationEngine>,
     groups: Arc<GroupEngine>,
+    database: Arc<Database>,
     device_addresses: Vec<IpAddr>,
 }
 
@@ -330,18 +333,21 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     let database = Arc::new(Database::open(database_path)?);
     database.migrate_legacy_json(automation_path, group_path)?;
     let automations = Arc::new(AutomationEngine::new(database.clone())?);
-    let groups = Arc::new(GroupEngine::new(database));
+    let groups = Arc::new(GroupEngine::new(database.clone()));
     let state = Arc::new(AppState {
         client: SmartHomeClient::new(),
         templates: templates()?,
         automations: automations.clone(),
         groups,
+        database: database.clone(),
         device_addresses: device_addresses.clone(),
     });
     tokio::spawn(automations.run(state.client.clone(), device_addresses));
+    tokio::spawn(purge_weather_history(database));
     let app = Router::new()
         .route("/", get(index))
-        .route("/refresh", post(refresh))
+        .route("/scan", post(scan))
+        .route("/devices/{device_id}", axum::routing::delete(remove_device))
         .route("/groups", post(create_group))
         .route("/groups/new", get(new_group))
         .route(
@@ -400,7 +406,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    let view = load_device_list(&state, None).await?;
+    let view = load_device_list(&state, None)?;
     let page = state
         .templates
         .get_template("index.html")?
@@ -408,8 +414,23 @@ async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppEr
     Ok(Html(page))
 }
 
-async fn refresh(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    render_device_list(&state, load_device_list(&state, None).await?)
+async fn scan(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
+    let plugs = scan_for_plugs(&state).await?;
+    state
+        .database
+        .remember_devices(&plugs)
+        .map_err(database_error)?;
+    render_device_list(
+        &state,
+        load_device_list(
+            &state,
+            Some(format!(
+                "Scan complete: {} device{} responded.",
+                plugs.len(),
+                if plugs.len() == 1 { "" } else { "s" }
+            )),
+        )?,
+    )
 }
 
 async fn set_relay(
@@ -418,12 +439,36 @@ async fn set_relay(
     Form(form): Form<RelayForm>,
 ) -> Result<Html<String>, AppError> {
     let client = state.client.clone();
-    task::spawn_blocking(move || client.set_relay(address, form.on)).await??;
-    render_device_list(&state, load_device_list(&state, None).await?)
+    let on = form.on;
+    task::spawn_blocking(move || client.set_relay(address, on)).await??;
+    state
+        .database
+        .update_relay(address, on)
+        .map_err(database_error)?;
+    render_device_list(&state, load_device_list(&state, None)?)
+}
+
+async fn remove_device(
+    State(state): State<Arc<AppState>>,
+    Path(device_id): Path<String>,
+) -> Result<Html<String>, AppError> {
+    if !state
+        .database
+        .remove_device(&device_id)
+        .map_err(database_error)?
+    {
+        return Err(AppError::not_found(format!(
+            "device {device_id} was not found"
+        )));
+    }
+    render_device_list(
+        &state,
+        load_device_list(&state, Some("Removed device from inventory.".to_owned()))?,
+    )
 }
 
 async fn new_group(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    let plugs = discover_plugs(&state).await?;
+    let plugs = remembered_plugs(&state)?;
     render_group_panel(&state, group_panel(None, &plugs))
 }
 
@@ -432,7 +477,7 @@ async fn edit_group(
     Path(id): Path<u64>,
 ) -> Result<Html<String>, AppError> {
     let group = find_group(&state, id)?;
-    let plugs = discover_plugs(&state).await?;
+    let plugs = remembered_plugs(&state)?;
     render_group_panel(&state, group_panel(Some(&group), &plugs))
 }
 
@@ -441,7 +486,7 @@ async fn create_group(
     Form(form): Form<GroupForm>,
 ) -> Result<Html<String>, AppError> {
     let (name, device_ids) = form.into_parts();
-    let plugs = discover_plugs(&state).await?;
+    let plugs = remembered_plugs(&state)?;
     validate_group_members(
         &device_ids,
         plugs.iter().map(|plug| plug.device_id.as_str()),
@@ -464,7 +509,7 @@ async fn update_group(
 ) -> Result<Html<String>, AppError> {
     let existing = find_group(&state, id)?;
     let (name, device_ids) = form.into_parts();
-    let plugs = discover_plugs(&state).await?;
+    let plugs = remembered_plugs(&state)?;
     validate_group_members(
         &device_ids,
         plugs
@@ -497,7 +542,7 @@ async fn delete_group(
     if !state.groups.delete(id).map_err(group_error)? {
         return Err(AppError::not_found(format!("group {id} was not found")));
     }
-    let view = load_device_list(&state, Some(format!("Deleted group “{}”.", group.name))).await?;
+    let view = load_device_list(&state, Some(format!("Deleted group “{}”.", group.name)))?;
     render_device_list(&state, view)
 }
 
@@ -508,7 +553,7 @@ async fn set_group_relay(
 ) -> Result<Html<String>, AppError> {
     let group = find_group(&state, id)?;
     let members: HashSet<_> = group.device_ids.iter().map(String::as_str).collect();
-    let mut plugs = discover_plugs(&state).await?;
+    let plugs = remembered_plugs(&state)?;
     let reachable: Vec<_> = plugs
         .iter()
         .filter(|plug| members.contains(plug.device_id.as_str()))
@@ -539,16 +584,20 @@ async fn set_group_relay(
             }
         }
     }
-    for plug in &mut plugs {
-        if controlled.contains(&plug.device_id) {
-            plug.relay_on = form.on;
-        }
+    for plug in plugs
+        .iter()
+        .filter(|plug| controlled.contains(&plug.device_id))
+    {
+        state
+            .database
+            .update_relay(plug.address, form.on)
+            .map_err(database_error)?;
     }
 
     let offline = group.device_ids.len().saturating_sub(reachable_count);
     let unavailable = offline + failed;
     let notice = group_relay_notice(&group.name, form.on, controlled.len(), unavailable);
-    render_device_list(&state, device_list_view(&state, plugs, Some(notice))?)
+    render_device_list(&state, load_device_list(&state, Some(notice))?)
 }
 
 async fn get_automations(
@@ -750,7 +799,7 @@ async fn set_schedules_enabled(
     render_schedule_panel(&state, &panel)
 }
 
-async fn discover_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
+async fn scan_for_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
     let client = state.client.clone();
     let device_addresses = state.device_addresses.clone();
     Ok(task::spawn_blocking(move || {
@@ -759,11 +808,12 @@ async fn discover_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
     .await??)
 }
 
-async fn load_device_list(
-    state: &AppState,
-    notice: Option<String>,
-) -> Result<DeviceListView, AppError> {
-    let plugs = discover_plugs(state).await?;
+fn remembered_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
+    state.database.devices().map_err(database_error)
+}
+
+fn load_device_list(state: &AppState, notice: Option<String>) -> Result<DeviceListView, AppError> {
+    let plugs = remembered_plugs(state)?;
     device_list_view(state, plugs, notice)
 }
 
@@ -1012,6 +1062,10 @@ fn automation_error(error: Box<dyn StdError + Send + Sync>) -> AppError {
     AppError::internal(error.to_string())
 }
 
+fn database_error(error: Box<dyn StdError + Send + Sync>) -> AppError {
+    AppError::internal(error.to_string())
+}
+
 fn group_error(error: Box<dyn StdError + Send + Sync>) -> AppError {
     if error
         .downcast_ref::<std::io::Error>()
@@ -1020,6 +1074,32 @@ fn group_error(error: Box<dyn StdError + Send + Sync>) -> AppError {
         AppError::bad_request(error.to_string())
     } else {
         AppError::internal(error.to_string())
+    }
+}
+
+async fn purge_weather_history(database: Arc<Database>) {
+    let mut interval = tokio::time::interval(WEATHER_PURGE_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        let cutoff = match database::unix_timestamp().and_then(|now| {
+            i64::try_from(WEATHER_HISTORY_RETENTION.as_secs())
+                .map(|retention| now - retention)
+                .map_err(Into::into)
+        }) {
+            Ok(cutoff) => cutoff,
+            Err(error) => {
+                eprintln!("could not calculate Open-Meteo history retention: {error}");
+                continue;
+            }
+        };
+        match database.purge_weather_history(cutoff) {
+            Ok(removed) if removed > 0 => {
+                println!("Purged {removed} expired Open-Meteo observations");
+            }
+            Ok(_) => {}
+            Err(error) => eprintln!("could not purge Open-Meteo history: {error}"),
+        }
     }
 }
 
@@ -1235,7 +1315,10 @@ async fn load_automation_panel(
         .rules_for(&plug.device_id)
         .map_err(automation_error)?;
     let location_available = plug.latitude.is_some() && plug.longitude.is_some();
-    let weather = if location_available {
+    let weather_request = async {
+        if !location_available {
+            return None;
+        }
         match state.automations.weather_status(plug).await {
             Ok(weather) => Some(weather),
             Err(error) => {
@@ -1243,13 +1326,13 @@ async fn load_automation_panel(
                 None
             }
         }
-    } else {
-        None
     };
     let schedule_client = state.client.clone();
     let address = plug.address;
-    let schedules =
-        task::spawn_blocking(move || load_schedule_panel(&schedule_client, address)).await??;
+    let schedule_request =
+        task::spawn_blocking(move || load_schedule_panel(&schedule_client, address));
+    let (weather, schedules) = tokio::join!(weather_request, schedule_request);
+    let schedules = schedules??;
     Ok(AutomationPanel {
         address: plug.address.to_string(),
         location_available,
@@ -1634,7 +1717,7 @@ mod tests {
         assert!(fragment.contains("hx-get=\"/groups/3\""));
         assert!(fragment.contains("&lt;Downstairs&gt;"));
         assert!(fragment.contains("Lamp &amp; fan"));
-        assert!(fragment.contains("Some members are unavailable"));
+        assert!(fragment.contains("Some members are not in the remembered inventory"));
     }
 
     #[test]
@@ -1655,12 +1738,13 @@ mod tests {
             .render(context! { plugs })
             .unwrap();
 
-        assert!(page.contains("hx-post=\"/refresh\""));
+        assert!(page.contains("hx-post=\"/scan\""));
         assert!(page.contains("hx-get=\"/groups/new\""));
         assert!(page.contains("hx-post=\"/plugs/192.0.2.1/relay\""));
         assert!(page.contains("hx-target=\"#plug-list\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/automations\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/countdown\""));
+        assert!(page.contains("hx-delete=\"/devices/device-1\""));
         assert!(!page.contains("hx-get=\"/plugs/192.0.2.1/schedules\""));
         assert!(page.contains("hx-target=\"#device-pane\""));
         assert!(page.contains("id=\"device-pane\""));

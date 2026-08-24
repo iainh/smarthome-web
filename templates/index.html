@@ -78,7 +78,7 @@
     button { border: 0; border-radius: .75rem; padding: .75rem 1rem; font-family: inherit; font-size: 10pt; font-weight: 700; cursor: pointer; transition: transform .15s, opacity .15s; }
     button:hover { transform: translateY(-1px); }
     button:disabled { cursor: wait; opacity: .55; }
-    .refresh, .theme-toggle { color: var(--foreground); background: var(--control-surface); white-space: nowrap; }
+    .scan, .theme-toggle { color: var(--foreground); background: var(--control-surface); white-space: nowrap; }
     .add-group { color: #fff; background: #2563eb; }
     .device-list, .device-section { display: grid; gap: 1rem; }
     .device-list { gap: 2rem; }
@@ -86,6 +86,10 @@
     .plug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; }
     .plug-card { display: grid; gap: 1rem; padding: 1.25rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--surface); box-shadow: 0 1rem 2rem var(--shadow); }
     .plug-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+    .plug-heading-actions { display: flex; align-items: center; gap: .45rem; }
+    .remove-device { display: grid; place-items: center; padding: .35rem; border: 1px solid var(--border); border-radius: .5rem; color: var(--muted); background: transparent; }
+    .remove-device:hover { color: #ef4444; background: var(--raised-surface); }
+    .remove-device svg { display: block; }
     .plug-heading h2, .plug-heading h3 { margin: 0; font-size: 1.15rem; }
     .model { margin: .2rem 0 0; color: var(--muted); font-size: .85rem; }
     .state { border-radius: 999px; padding: .25rem .6rem; font-size: .75rem; font-weight: 800; text-transform: uppercase; }
@@ -199,7 +203,7 @@
     <header>
       <div>
         <h1>Smart plugs</h1>
-        <p class="subtitle">Discover and control Kasa plugs on your local network.</p>
+        <p class="subtitle">Remember and control Kasa plugs on your local network.</p>
       </div>
       <div class="header-actions">
         <button class="theme-toggle" type="button">
@@ -208,8 +212,8 @@
         <button class="add-group" type="button" hx-get="/groups/new" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
           <span class="button-label">Add group</span>
         </button>
-        <button class="refresh" hx-post="/refresh" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="this">
-          <span class="button-label">Refresh devices</span>
+        <button class="scan" hx-post="/scan" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="this">
+          <span class="button-label">Scan for devices</span>
         </button>
       </div>
     </header>

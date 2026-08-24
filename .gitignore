@@ -1,5 +1,8 @@
 /target
 automations.json
 groups.json
+tddp-client.sqlite3
+tddp-client.sqlite3-shm
+tddp-client.sqlite3-wal
 **/*.rs.bk
 .idea/**

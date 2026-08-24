@@ -205,7 +205,16 @@ impl Database {
             stored
                 .into_iter()
                 .map(
-                    |(address, model, alias, device_id, software_version, relay_on, latitude, longitude)| {
+                    |(
+                        address,
+                        model,
+                        alias,
+                        device_id,
+                        software_version,
+                        relay_on,
+                        latitude,
+                        longitude,
+                    )| {
                         Ok(SmartPlug {
                             address: address.parse::<IpAddr>()?,
                             model,
@@ -365,7 +374,71 @@ fn set_sequence(transaction: &rusqlite::Transaction<'_>, table: &str, next_id: u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn smart_plug() -> SmartPlug {
+        SmartPlug {
+            address: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)),
+            model: "HS105(US)".to_owned(),
+            alias: "Desk lamp".to_owned(),
+            device_id: "device-1".to_owned(),
+            software_version: "1.5.6".to_owned(),
+            relay_on: false,
+            latitude: Some(46.4106),
+            longitude: Some(-81.0171),
+        }
+    }
+
+    #[test]
+    fn remembered_devices_survive_updates_until_removed() {
+        let database = Database::open(":memory:").unwrap();
+        database.remember_devices(&[smart_plug()]).unwrap();
+        database.update_relay(smart_plug().address, true).unwrap();
+
+        let devices = database.devices().unwrap();
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].device_id, "device-1");
+        assert!(devices[0].relay_on);
+
+        assert!(database.remove_device("device-1").unwrap());
+        assert!(!database.remove_device("device-1").unwrap());
+        assert!(database.devices().unwrap().is_empty());
+    }
+
+    #[test]
+    fn weather_observations_are_upserted_and_expired_history_is_purged() {
+        let database = Database::open(":memory:").unwrap();
+        let observation = WeatherObservation {
+            latitude: 464_106,
+            longitude: -810_171,
+            observed_at: 1_777_000_000,
+            temperature: 18.5,
+            apparent_temperature: 17.0,
+            precipitation: 0.0,
+            weather_code: 2,
+            cloud_cover: 40,
+            is_day: true,
+            shortwave_radiation: 250.0,
+        };
+        database.record_weather(&observation).unwrap();
+        database.record_weather(&observation).unwrap();
+
+        database
+            .with_connection(|connection| {
+                let count: i64 =
+                    connection.query_row("SELECT COUNT(*) FROM open_meteo_history", [], |row| {
+                        row.get(0)
+                    })?;
+                assert_eq!(count, 1);
+                connection.execute("UPDATE open_meteo_history SET fetched_at = 100", [])?;
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(database.purge_weather_history(101).unwrap(), 1);
+        assert_eq!(database.purge_weather_history(101).unwrap(), 0);
+    }
 
     #[test]
     fn legacy_json_is_imported_once() {

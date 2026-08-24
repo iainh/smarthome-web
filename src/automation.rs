@@ -1,4 +1,4 @@
-use crate::database::Database;
+use crate::database::{Database, WeatherObservation};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -175,11 +175,20 @@ impl AutomationEngine {
         }
 
         let discovery_client = client.clone();
-        let device_addresses = device_addresses.to_vec();
+        let mut device_addresses = device_addresses.to_vec();
+        device_addresses.extend(
+            self.database
+                .devices()?
+                .into_iter()
+                .map(|device| device.address),
+        );
+        device_addresses.sort_unstable();
+        device_addresses.dedup();
         let plugs = tokio::task::spawn_blocking(move || {
             discovery_client.get_inventory_from(&device_addresses, Duration::from_secs(3))
         })
         .await??;
+        self.database.remember_devices(&plugs)?;
         let mut plugs: HashMap<_, _> = plugs
             .into_iter()
             .map(|plug| (plug.device_id.clone(), plug))
@@ -264,7 +273,20 @@ impl AutomationEngine {
             .error_for_status()?
             .json::<WeatherResponse>()
             .await?;
-        response.snapshot()
+        let snapshot = response.snapshot()?;
+        self.database.record_weather(&WeatherObservation {
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude,
+            observed_at: snapshot.time,
+            temperature: snapshot.temperature,
+            apparent_temperature: snapshot.apparent_temperature,
+            precipitation: snapshot.precipitation,
+            weather_code: snapshot.weather_code,
+            cloud_cover: snapshot.cloud_cover,
+            is_day: snapshot.is_day,
+            shortwave_radiation: snapshot.shortwave_radiation,
+        })?;
+        Ok(snapshot)
     }
 
     fn all_rules(&self) -> Result<Vec<AutomationRule>> {

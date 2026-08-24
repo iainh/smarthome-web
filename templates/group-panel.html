@@ -23,7 +23,7 @@
           </span>
         </label>
       {% else %}
-        <p class="schedule-status">No compatible smart plugs responded.</p>
+        <p class="schedule-status">No devices remembered. Scan the network first.</p>
       {% endfor %}
     </fieldset>
     <button class="small-button" type="submit">{% if panel.editing %}Save group{% else %}Create group{% endif %}</button>

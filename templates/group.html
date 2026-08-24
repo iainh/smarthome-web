@@ -2,13 +2,13 @@
   <div class="plug-heading">
     <div>
       <h3>{{ group.name }}</h3>
-      <p class="model">{{ group.reachable_count }} of {{ group.member_count }} members reachable</p>
+      <p class="model">{{ group.reachable_count }} of {{ group.member_count }} members remembered</p>
     </div>
     <span class="state {{ group.state_class }}">{{ group.state }}</span>
   </div>
   <p class="group-members">{{ group.members }}</p>
   {% if group.has_offline_members %}
-    <p class="group-warning">Some members are unavailable. Reachable members can still be controlled.</p>
+    <p class="group-warning">Some members are not in the remembered inventory. Remembered members can still be controlled.</p>
   {% endif %}
   <div class="group-relay-actions">
     <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
