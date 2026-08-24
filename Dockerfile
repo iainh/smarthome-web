@@ -19,8 +19,7 @@ RUN apt-get update \
 COPY --from=builder /app/target/release/tddp-client /usr/local/bin/tddp-client
 
 ENV BIND_ADDR=0.0.0.0:3000
-ENV AUTOMATIONS_PATH=/data/automations.json
-ENV GROUPS_PATH=/data/groups.json
+ENV DATABASE_PATH=/data/tddp-client.sqlite3
 
 VOLUME ["/data"]
 EXPOSE 3000

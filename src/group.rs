@@ -1,10 +1,11 @@
+use crate::database::Database;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::error::Error;
-use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::Arc;
 
 const MAX_GROUPS: usize = 50;
 
@@ -17,107 +18,124 @@ pub struct DeviceGroup {
     pub device_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct GroupStore {
-    #[serde(default)]
-    next_id: u64,
-    #[serde(default)]
-    groups: Vec<DeviceGroup>,
-}
-
 pub struct GroupEngine {
-    path: PathBuf,
-    store: Mutex<GroupStore>,
+    database: Arc<Database>,
 }
 
 impl GroupEngine {
-    pub fn load(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let store = match fs::read(&path) {
-            Ok(contents) => serde_json::from_slice(&contents)?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => GroupStore::default(),
-            Err(error) => return Err(error.into()),
-        };
-        Ok(Self {
-            path,
-            store: Mutex::new(store),
-        })
+    pub fn new(database: Arc<Database>) -> Self {
+        Self { database }
     }
 
     pub fn groups(&self) -> Result<Vec<DeviceGroup>> {
-        Ok(self.lock_store()?.groups.clone())
+        self.database.with_connection(|connection| {
+            let mut statement = connection.prepare("SELECT id, name FROM groups ORDER BY id")?;
+            let headers = statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            load_groups(connection, headers)
+        })
     }
 
     pub fn get(&self, id: u64) -> Result<Option<DeviceGroup>> {
-        Ok(self
-            .lock_store()?
-            .groups
-            .iter()
-            .find(|group| group.id == id)
-            .cloned())
+        let Ok(id) = i64::try_from(id) else {
+            return Ok(None);
+        };
+        self.database.with_connection(|connection| {
+            let header = connection
+                .query_row("SELECT id, name FROM groups WHERE id = ?1", [id], |row| {
+                    Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?))
+                })
+                .optional()?;
+            match header {
+                Some(header) => Ok(load_groups(connection, vec![header])?.pop()),
+                None => Ok(None),
+            }
+        })
     }
 
     pub fn add(&self, name: &str, device_ids: Vec<String>) -> Result<u64> {
         let group = validated_group(name, device_ids)?;
-        let mut store = self.lock_store()?;
-        if store.groups.len() >= MAX_GROUPS {
-            return Err(invalid_input("no more than 50 groups can be created"));
-        }
-
-        let mut updated = store.clone();
-        updated.next_id = updated.next_id.saturating_add(1);
-        let id = updated.next_id;
-        updated.groups.push(DeviceGroup {
-            id,
-            name: group.name,
-            device_ids: group.device_ids,
-        });
-        self.save(&updated)?;
-        *store = updated;
-        Ok(id)
+        self.database.with_connection(|connection| {
+            let transaction = connection.transaction()?;
+            let count: i64 =
+                transaction.query_row("SELECT COUNT(*) FROM groups", [], |row| row.get(0))?;
+            if count >= MAX_GROUPS as i64 {
+                return Err(invalid_input("no more than 50 groups can be created"));
+            }
+            transaction.execute("INSERT INTO groups (name) VALUES (?1)", [&group.name])?;
+            let id = transaction.last_insert_rowid();
+            insert_devices(&transaction, id, &group.device_ids)?;
+            transaction.commit()?;
+            Ok(id as u64)
+        })
     }
 
     pub fn update(&self, id: u64, name: &str, device_ids: Vec<String>) -> Result<bool> {
         let group = validated_group(name, device_ids)?;
-        let mut store = self.lock_store()?;
-        let mut updated = store.clone();
-        let Some(existing) = updated.groups.iter_mut().find(|existing| existing.id == id) else {
+        let Ok(id) = i64::try_from(id) else {
             return Ok(false);
         };
-        existing.name = group.name;
-        existing.device_ids = group.device_ids;
-        self.save(&updated)?;
-        *store = updated;
-        Ok(true)
-    }
-
-    pub fn delete(&self, id: u64) -> Result<bool> {
-        let mut store = self.lock_store()?;
-        let mut updated = store.clone();
-        let original_len = updated.groups.len();
-        updated.groups.retain(|group| group.id != id);
-        if updated.groups.len() == original_len {
-            return Ok(false);
-        }
-        self.save(&updated)?;
-        *store = updated;
-        Ok(true)
-    }
-
-    fn lock_store(&self) -> Result<std::sync::MutexGuard<'_, GroupStore>> {
-        self.store.lock().map_err(|_| {
-            Box::new(io::Error::other("group store lock is poisoned"))
-                as Box<dyn Error + Send + Sync>
+        self.database.with_connection(|connection| {
+            let transaction = connection.transaction()?;
+            let changed = transaction.execute(
+                "UPDATE groups SET name = ?1 WHERE id = ?2",
+                params![group.name, id],
+            )?;
+            if changed == 0 {
+                return Ok(false);
+            }
+            transaction.execute("DELETE FROM group_devices WHERE group_id = ?1", [id])?;
+            insert_devices(&transaction, id, &group.device_ids)?;
+            transaction.commit()?;
+            Ok(true)
         })
     }
 
-    fn save(&self, store: &GroupStore) -> Result<()> {
-        let contents = serde_json::to_vec_pretty(store)?;
-        let temporary = temporary_path(&self.path);
-        fs::write(&temporary, contents)?;
-        fs::rename(temporary, &self.path)?;
-        Ok(())
+    pub fn delete(&self, id: u64) -> Result<bool> {
+        let Ok(id) = i64::try_from(id) else {
+            return Ok(false);
+        };
+        self.database.with_connection(|connection| {
+            Ok(connection.execute("DELETE FROM groups WHERE id = ?1", [id])? != 0)
+        })
     }
+}
+
+fn load_groups(
+    connection: &rusqlite::Connection,
+    headers: Vec<(u64, String)>,
+) -> Result<Vec<DeviceGroup>> {
+    let mut device_statement = connection
+        .prepare("SELECT device_id FROM group_devices WHERE group_id = ?1 ORDER BY position")?;
+    headers
+        .into_iter()
+        .map(|(id, name)| {
+            let device_ids = device_statement
+                .query_map([id as i64], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(DeviceGroup {
+                id,
+                name,
+                device_ids,
+            })
+        })
+        .collect()
+}
+
+fn insert_devices(
+    transaction: &rusqlite::Transaction<'_>,
+    group_id: i64,
+    device_ids: &[String],
+) -> Result<()> {
+    let mut statement = transaction
+        .prepare("INSERT INTO group_devices (group_id, position, device_id) VALUES (?1, ?2, ?3)")?;
+    for (position, device_id) in device_ids.iter().enumerate() {
+        statement.execute(params![group_id, position as i64, device_id])?;
+    }
+    Ok(())
 }
 
 struct ValidatedGroup {
@@ -150,15 +168,11 @@ fn invalid_input(message: &str) -> Box<dyn Error + Send + Sync> {
     Box::new(io::Error::new(io::ErrorKind::InvalidInput, message))
 }
 
-fn temporary_path(path: &Path) -> PathBuf {
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".tmp");
-    temporary.into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temporary_store() -> PathBuf {
@@ -167,15 +181,19 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!(
-            "tddp-client-groups-{}-{unique}.json",
+            "tddp-client-groups-{}-{unique}.sqlite3",
             std::process::id()
         ))
+    }
+
+    fn engine(path: &PathBuf) -> GroupEngine {
+        GroupEngine::new(Arc::new(Database::open(path).unwrap()))
     }
 
     #[test]
     fn groups_survive_updates_deletes_and_restart() {
         let path = temporary_store();
-        let groups = GroupEngine::load(&path).unwrap();
+        let groups = engine(&path);
         let first_id = groups
             .add(
                 " Downstairs ",
@@ -189,7 +207,7 @@ mod tests {
         assert!(groups.delete(second_id).unwrap());
         drop(groups);
 
-        let reloaded = GroupEngine::load(&path).unwrap();
+        let reloaded = engine(&path);
         assert_eq!(
             reloaded.groups().unwrap(),
             vec![DeviceGroup {
@@ -200,13 +218,14 @@ mod tests {
         );
         assert_eq!(reloaded.get(second_id).unwrap(), None);
 
+        drop(reloaded);
         fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn invalid_names_and_memberships_are_rejected_without_changing_store() {
         let path = temporary_store();
-        let groups = GroupEngine::load(&path).unwrap();
+        let groups = engine(&path);
 
         assert!(groups.add("  ", vec!["plug-1".to_owned()]).is_err());
         assert!(groups.add("Empty", Vec::new()).is_err());
@@ -214,13 +233,16 @@ mod tests {
             .add("Duplicate", vec!["plug-1".to_owned(), "plug-1".to_owned()])
             .is_err());
         assert!(groups.groups().unwrap().is_empty());
-        assert!(!path.exists());
+        assert!(path.exists());
+
+        drop(groups);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn group_limit_matches_kasa() {
         let path = temporary_store();
-        let groups = GroupEngine::load(&path).unwrap();
+        let groups = engine(&path);
         for index in 0..MAX_GROUPS {
             groups
                 .add(&format!("Group {index}"), vec![format!("plug-{index}")])
@@ -232,6 +254,7 @@ mod tests {
             .is_err());
         assert_eq!(groups.groups().unwrap().len(), MAX_GROUPS);
 
+        drop(groups);
         fs::remove_file(path).unwrap();
     }
 }

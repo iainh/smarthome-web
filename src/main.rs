@@ -1,4 +1,5 @@
 mod automation;
+mod database;
 mod group;
 
 use automation::{
@@ -9,6 +10,7 @@ use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
+use database::Database;
 use group::{DeviceGroup, GroupEngine};
 use minijinja::{context, AutoEscape, Environment};
 use serde::{Deserialize, Serialize};
@@ -311,19 +313,24 @@ impl From<task::JoinError> for AppError {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
+    let database_path = std::env::var_os("DATABASE_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("tddp-client.sqlite3"));
     let automation_path = std::env::var_os("AUTOMATIONS_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("automations.json"));
+        .unwrap_or_else(|| database_path.with_file_name("automations.json"));
     let group_path = std::env::var_os("GROUPS_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("groups.json"));
+        .unwrap_or_else(|| database_path.with_file_name("groups.json"));
     let device_addresses = match std::env::var("DEVICE_ADDRESSES") {
         Ok(value) => parse_device_addresses(&value)?,
         Err(std::env::VarError::NotPresent) => Vec::new(),
         Err(error) => return Err(error.into()),
     };
-    let automations = Arc::new(AutomationEngine::load(automation_path)?);
-    let groups = Arc::new(GroupEngine::load(group_path)?);
+    let database = Arc::new(Database::open(database_path)?);
+    database.migrate_legacy_json(automation_path, group_path)?;
+    let automations = Arc::new(AutomationEngine::new(database.clone())?);
+    let groups = Arc::new(GroupEngine::new(database));
     let state = Arc::new(AppState {
         client: SmartHomeClient::new(),
         templates: templates()?,

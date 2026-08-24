@@ -1,11 +1,12 @@
+use crate::database::Database;
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::error::Error;
-use std::fs;
 use std::io;
 use std::net::IpAddr;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::Arc;
 use std::time::Duration;
 use tddp_client::{SmartHomeClient, SmartPlug};
 
@@ -89,31 +90,15 @@ pub struct LightPoint {
     pub radiation: f64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct AutomationStore {
-    #[serde(default)]
-    next_id: u64,
-    #[serde(default)]
-    rules: Vec<AutomationRule>,
-}
-
 pub struct AutomationEngine {
-    path: PathBuf,
-    store: Mutex<AutomationStore>,
+    database: Arc<Database>,
     weather: reqwest::Client,
 }
 
 impl AutomationEngine {
-    pub fn load(path: impl Into<PathBuf>) -> Result<Self> {
-        let path = path.into();
-        let store = match fs::read(&path) {
-            Ok(contents) => serde_json::from_slice(&contents)?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => AutomationStore::default(),
-            Err(error) => return Err(error.into()),
-        };
+    pub fn new(database: Arc<Database>) -> Result<Self> {
         Ok(Self {
-            path,
-            store: Mutex::new(store),
+            database,
             weather: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()?,
@@ -121,45 +106,38 @@ impl AutomationEngine {
     }
 
     pub fn rules_for(&self, device_id: &str) -> Result<Vec<AutomationRule>> {
-        let store = self.lock_store()?;
-        Ok(store
-            .rules
-            .iter()
-            .filter(|rule| rule.device_id == device_id)
-            .cloned()
-            .collect())
+        self.database.with_connection(|connection| {
+            load_rules(
+                connection,
+                "SELECT id, device_id, trigger_json, turn_on, last_solar_day
+                 FROM automations WHERE device_id = ?1 ORDER BY id",
+                [device_id],
+            )
+        })
     }
 
     pub fn add(&self, automation: NewAutomation) -> Result<()> {
-        let mut store = self.lock_store()?;
-        let mut updated = store.clone();
-        updated.next_id = updated.next_id.saturating_add(1);
-        let id = updated.next_id;
-        updated.rules.push(AutomationRule {
-            id,
-            device_id: automation.device_id,
-            trigger: automation.trigger,
-            turn_on: automation.turn_on,
-            last_solar_day: None,
-        });
-        self.save(&updated)?;
-        *store = updated;
-        Ok(())
+        let trigger = serde_json::to_string(&automation.trigger)?;
+        self.database.with_connection(|connection| {
+            connection.execute(
+                "INSERT INTO automations (device_id, trigger_json, turn_on)
+                 VALUES (?1, ?2, ?3)",
+                params![automation.device_id, trigger, automation.turn_on],
+            )?;
+            Ok(())
+        })
     }
 
     pub fn delete(&self, device_id: &str, id: u64) -> Result<bool> {
-        let mut store = self.lock_store()?;
-        let mut updated = store.clone();
-        let original_len = updated.rules.len();
-        updated
-            .rules
-            .retain(|rule| rule.id != id || rule.device_id != device_id);
-        if updated.rules.len() == original_len {
+        let Ok(id) = i64::try_from(id) else {
             return Ok(false);
-        }
-        self.save(&updated)?;
-        *store = updated;
-        Ok(true)
+        };
+        self.database.with_connection(|connection| {
+            Ok(connection.execute(
+                "DELETE FROM automations WHERE id = ?1 AND device_id = ?2",
+                params![id, device_id],
+            )? != 0)
+        })
     }
 
     pub async fn weather_status(&self, plug: &SmartPlug) -> Result<WeatherStatus> {
@@ -191,10 +169,7 @@ impl AutomationEngine {
     }
 
     async fn evaluate(&self, client: &SmartHomeClient, device_addresses: &[IpAddr]) -> Result<()> {
-        let rules = {
-            let store = self.lock_store()?;
-            store.rules.clone()
-        };
+        let rules = self.all_rules()?;
         if rules.is_empty() {
             return Ok(());
         }
@@ -244,15 +219,18 @@ impl AutomationEngine {
         }
 
         if !triggered_solar_rules.is_empty() {
-            let mut store = self.lock_store()?;
-            let mut updated = store.clone();
-            for (id, day) in triggered_solar_rules {
-                if let Some(rule) = updated.rules.iter_mut().find(|rule| rule.id == id) {
-                    rule.last_solar_day = Some(day);
+            self.database.with_connection(|connection| {
+                let transaction = connection.transaction()?;
+                {
+                    let mut statement = transaction
+                        .prepare("UPDATE automations SET last_solar_day = ?1 WHERE id = ?2")?;
+                    for (id, day) in triggered_solar_rules {
+                        statement.execute(params![day, id as i64])?;
+                    }
                 }
-            }
-            self.save(&updated)?;
-            *store = updated;
+                transaction.commit()?;
+                Ok(())
+            })?;
         }
         Ok(())
     }
@@ -289,20 +267,47 @@ impl AutomationEngine {
         response.snapshot()
     }
 
-    fn lock_store(&self) -> Result<std::sync::MutexGuard<'_, AutomationStore>> {
-        self.store.lock().map_err(|_| {
-            Box::new(io::Error::other("automation store lock is poisoned"))
-                as Box<dyn Error + Send + Sync>
+    fn all_rules(&self) -> Result<Vec<AutomationRule>> {
+        self.database.with_connection(|connection| {
+            load_rules(
+                connection,
+                "SELECT id, device_id, trigger_json, turn_on, last_solar_day
+                 FROM automations ORDER BY id",
+                [],
+            )
         })
     }
+}
 
-    fn save(&self, store: &AutomationStore) -> Result<()> {
-        let contents = serde_json::to_vec_pretty(store)?;
-        let temporary = temporary_path(&self.path);
-        fs::write(&temporary, contents)?;
-        fs::rename(temporary, &self.path)?;
-        Ok(())
-    }
+fn load_rules(
+    connection: &rusqlite::Connection,
+    sql: &str,
+    parameters: impl rusqlite::Params,
+) -> Result<Vec<AutomationRule>> {
+    let mut statement = connection.prepare(sql)?;
+    let stored_rules = statement
+        .query_map(parameters, |row| {
+            Ok((
+                row.get::<_, i64>(0)? as u64,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, bool>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    stored_rules
+        .into_iter()
+        .map(|(id, device_id, trigger, turn_on, last_solar_day)| {
+            Ok(AutomationRule {
+                id,
+                device_id,
+                trigger: serde_json::from_str(&trigger)?,
+                turn_on,
+                last_solar_day,
+            })
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -616,15 +621,11 @@ fn weather_condition(code: u8) -> &'static str {
     }
 }
 
-fn temporary_path(path: &Path) -> PathBuf {
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".tmp");
-    temporary.into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::Database;
+    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn weather(time: i64, radiation: f64) -> WeatherSnapshot {
@@ -780,10 +781,10 @@ mod tests {
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "tddp-client-automations-{}-{unique}.json",
+            "tddp-client-automations-{}-{unique}.sqlite3",
             std::process::id()
         ));
-        let engine = AutomationEngine::load(&path).unwrap();
+        let engine = AutomationEngine::new(Arc::new(Database::open(&path).unwrap())).unwrap();
         engine
             .add(NewAutomation {
                 device_id: "plug".to_owned(),
@@ -796,7 +797,7 @@ mod tests {
             .unwrap();
         drop(engine);
 
-        let reloaded = AutomationEngine::load(&path).unwrap();
+        let reloaded = AutomationEngine::new(Arc::new(Database::open(&path).unwrap())).unwrap();
         let rules = reloaded.rules_for("plug").unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].id, 1);
@@ -808,6 +809,7 @@ mod tests {
             }
         );
 
+        drop(reloaded);
         fs::remove_file(path).unwrap();
     }
 }
