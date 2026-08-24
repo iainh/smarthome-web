@@ -172,9 +172,15 @@
     .weekday:has(input:focus-visible) { outline: 2px solid #7dd3fc; outline-offset: 2px; }
     .weekday input { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
     .advanced-note { margin: 0; color: var(--warning); font-size: .75rem; }
-    .timer-rule { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .8rem; border-radius: .75rem; background: var(--raised-surface); }
+    .timer-rule { display: grid; gap: .65rem; padding: .8rem; border-radius: .75rem; background: var(--raised-surface); }
+    .timer-rule-summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
     .timer-rule h3 { margin: 0; font-size: .9rem; }
     .timer-rule p { margin: .2rem 0 0; color: var(--muted); font-size: .78rem; }
+    .schedule-editor { margin: 0; padding: .6rem .7rem; background: var(--detail-surface); }
+    .schedule-editor > summary { color: var(--subtle-foreground); font-size: .75rem; font-weight: 700; }
+    .schedule-editor > .schedule-form { margin-top: .7rem; }
+    .window-toggle { display: flex; grid-template-columns: none; align-items: center; gap: .5rem; color: var(--subtle-foreground); }
+    .window-toggle input { width: auto; accent-color: #2563eb; }
     .schedule-type { display: inline-block; margin-left: .25rem; padding: .12rem .4rem; border-radius: 999px; color: var(--muted); background: var(--detail-surface); font-size: .62rem; font-weight: 700; vertical-align: .08rem; }
     .automation-intro { margin: 0; color: var(--muted); font-size: .85rem; line-height: 1.5; }
     .automation-rules-header { margin-bottom: .75rem; }
@@ -381,6 +387,11 @@
       form.querySelectorAll(".off-threshold-output").forEach(function (output) {
         output.value = offAbove;
       });
+      const windowEnabled = form.elements.window_enabled.checked;
+      form.querySelectorAll(".window-flow, .window-preview, .advanced-timing, .outside-window-options").forEach(function (control) {
+        control.hidden = !windowEnabled;
+      });
+      if (!windowEnabled) return;
       const start = boundaryDescription(form, "start");
       const end = boundaryDescription(form, "end");
       form.querySelector(".window-preview").textContent =

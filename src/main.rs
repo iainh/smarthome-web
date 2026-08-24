@@ -144,6 +144,7 @@ struct LightAutomationForm {
     name: String,
     on_below: f64,
     off_above: f64,
+    window_enabled: Option<String>,
     start_kind: String,
     start_time: String,
     start_offset_minutes: i16,
@@ -166,9 +167,31 @@ struct AutomationPanel {
 struct AutomationView {
     id: u64,
     title: &'static str,
+    kind: &'static str,
     name: String,
     enabled: bool,
     description: String,
+    time: String,
+    event: &'static str,
+    offset_minutes: i16,
+    turn_on: bool,
+    sun: bool,
+    mon: bool,
+    tue: bool,
+    wed: bool,
+    thu: bool,
+    fri: bool,
+    sat: bool,
+    on_below: f64,
+    off_above: f64,
+    window_enabled: bool,
+    start_kind: &'static str,
+    start_time: String,
+    start_offset_minutes: i16,
+    end_kind: &'static str,
+    end_time: String,
+    end_offset_minutes: i16,
+    outside_turn_off: bool,
 }
 
 #[derive(Deserialize)]
@@ -357,6 +380,18 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         .route(
             "/plugs/{address}/automations/{id}/enabled",
             post(set_automation_enabled),
+        )
+        .route(
+            "/plugs/{address}/automations/{id}/fixed",
+            post(update_fixed_automation),
+        )
+        .route(
+            "/plugs/{address}/automations/{id}/solar",
+            post(update_solar_automation),
+        )
+        .route(
+            "/plugs/{address}/automations/{id}/light",
+            post(update_light_automation),
         )
         .route(
             "/plugs/{address}/automations/migrate",
@@ -712,6 +747,55 @@ async fn create_light_automation(
         .map_err(automation_error)?;
     let panel = load_automation_panel(&state, &plug).await?;
     render_automation_panel(&state, &panel)
+}
+
+async fn update_fixed_automation(
+    State(state): State<Arc<AppState>>,
+    Path((address, id)): Path<(IpAddr, u64)>,
+    Form(form): Form<ScheduleForm>,
+) -> Result<Html<String>, AppError> {
+    let plug = get_plug(state.client.clone(), address).await?;
+    let automation = fixed_automation(form, plug.device_id.clone())?;
+    update_automation(&state, &plug, id, automation).await
+}
+
+async fn update_solar_automation(
+    State(state): State<Arc<AppState>>,
+    Path((address, id)): Path<(IpAddr, u64)>,
+    Form(form): Form<SolarAutomationForm>,
+) -> Result<Html<String>, AppError> {
+    let plug = get_plug(state.client.clone(), address).await?;
+    let automation = solar_automation(form, plug.device_id.clone())?;
+    update_automation(&state, &plug, id, automation).await
+}
+
+async fn update_light_automation(
+    State(state): State<Arc<AppState>>,
+    Path((address, id)): Path<(IpAddr, u64)>,
+    Form(form): Form<LightAutomationForm>,
+) -> Result<Html<String>, AppError> {
+    let plug = get_plug(state.client.clone(), address).await?;
+    let automation = light_automation(form, plug.device_id.clone())?;
+    update_automation(&state, &plug, id, automation).await
+}
+
+async fn update_automation(
+    state: &AppState,
+    plug: &SmartPlug,
+    id: u64,
+    automation: NewAutomation,
+) -> Result<Html<String>, AppError> {
+    let updated = state
+        .automations
+        .update(&plug.device_id, id, automation)
+        .map_err(automation_error)?;
+    if !updated {
+        return Err(AppError::not_found(format!(
+            "automation {id} was not found"
+        )));
+    }
+    let panel = load_automation_panel(state, plug).await?;
+    render_automation_panel(state, &panel)
 }
 
 async fn set_automation_enabled(
@@ -1083,23 +1167,29 @@ fn light_automation(
         ));
     }
     let name = validated_schedule_name(&form.name)?;
-    let active_window = ActiveWindow {
-        start: parse_time_boundary(
-            &form.start_kind,
-            &form.start_time,
-            form.start_offset_minutes,
-        )?,
-        end: parse_time_boundary(&form.end_kind, &form.end_time, form.end_offset_minutes)?,
-        outside: match form.outside_window.as_str() {
-            "turn_off" => OutsideWindowBehavior::TurnOff,
-            "stop_controlling" => OutsideWindowBehavior::StopControlling,
-            _ => {
-                return Err(AppError::bad_request(
-                    "outside-window behavior must be turn off or stop controlling",
-                ))
-            }
-        },
-    };
+    let active_window = form
+        .window_enabled
+        .is_some()
+        .then(|| {
+            Ok(ActiveWindow {
+                start: parse_time_boundary(
+                    &form.start_kind,
+                    &form.start_time,
+                    form.start_offset_minutes,
+                )?,
+                end: parse_time_boundary(&form.end_kind, &form.end_time, form.end_offset_minutes)?,
+                outside: match form.outside_window.as_str() {
+                    "turn_off" => OutsideWindowBehavior::TurnOff,
+                    "stop_controlling" => OutsideWindowBehavior::StopControlling,
+                    _ => {
+                        return Err(AppError::bad_request(
+                            "outside-window behavior must be turn off or stop controlling",
+                        ))
+                    }
+                },
+            })
+        })
+        .transpose()?;
     Ok(NewAutomation {
         device_id,
         name,
@@ -1107,7 +1197,7 @@ fn light_automation(
         trigger: AutomationTrigger::LightLevel {
             on_below: form.on_below,
             off_above: form.off_above,
-            active_window: Some(active_window),
+            active_window,
         },
         turn_on: true,
     })
@@ -1344,22 +1434,52 @@ fn automation_view(rule: AutomationRule) -> AutomationView {
     } else {
         rule.name.clone()
     };
+    let mut view = AutomationView {
+        id: rule.id,
+        title: "",
+        kind: "",
+        name,
+        enabled: rule.enabled,
+        description: String::new(),
+        time: String::new(),
+        event: "",
+        offset_minutes: 0,
+        turn_on: rule.turn_on,
+        sun: false,
+        mon: false,
+        tue: false,
+        wed: false,
+        thu: false,
+        fri: false,
+        sat: false,
+        on_below: 0.0,
+        off_above: 0.0,
+        window_enabled: false,
+        start_kind: "fixed",
+        start_time: "09:00".to_owned(),
+        start_offset_minutes: 0,
+        end_kind: "fixed",
+        end_time: "17:00".to_owned(),
+        end_offset_minutes: 0,
+        outside_turn_off: true,
+    };
     match rule.trigger {
         AutomationTrigger::FixedTime {
             minute_of_day,
             weekdays,
-        } => AutomationView {
-            id: rule.id,
-            title: "Fixed time",
-            name,
-            enabled: rule.enabled,
-            description: format!(
+        } => {
+            view.title = "Fixed time";
+            view.kind = "fixed";
+            view.time = format!("{:02}:{:02}", minute_of_day / 60, minute_of_day % 60);
+            view.description = format!(
                 "{} · Turn {} · {}",
                 automation::format_clock_time(minute_of_day / 60, minute_of_day % 60),
                 if rule.turn_on { "on" } else { "off" },
                 weekday_summary(weekdays)
-            ),
-        },
+            );
+            set_automation_weekdays(&mut view, weekdays);
+            view
+        }
         AutomationTrigger::Solar {
             event,
             offset_minutes,
@@ -1378,28 +1498,28 @@ fn automation_view(rule: AutomationRule) -> AutomationView {
                     format!("{} min after {event_name}", offset_minutes.unsigned_abs())
                 }
             };
-            AutomationView {
-                id: rule.id,
-                title,
-                name,
-                enabled: rule.enabled,
-                description: format!(
-                    "Turn {} {timing} · {}",
-                    if rule.turn_on { "on" } else { "off" },
-                    weekday_summary(weekdays)
-                ),
-            }
+            view.title = title;
+            view.kind = "solar";
+            view.event = event_name;
+            view.offset_minutes = offset_minutes;
+            view.description = format!(
+                "Turn {} {timing} · {}",
+                if rule.turn_on { "on" } else { "off" },
+                weekday_summary(weekdays)
+            );
+            set_automation_weekdays(&mut view, weekdays);
+            view
         }
         AutomationTrigger::LightLevel {
             on_below,
             off_above,
             active_window,
-        } => AutomationView {
-            id: rule.id,
-            title: "Outdoor light",
-            name,
-            enabled: rule.enabled,
-            description: match active_window {
+        } => {
+            view.title = "Outdoor light";
+            view.kind = "light";
+            view.on_below = on_below;
+            view.off_above = off_above;
+            view.description = match active_window {
                 Some(window) => format!(
                     "{}–{} · On ≤ {on_below:.0} W/m² · Off ≥ {off_above:.0} W/m²{}",
                     time_boundary_description(window.start),
@@ -1411,8 +1531,47 @@ fn automation_view(rule: AutomationRule) -> AutomationView {
                     }
                 ),
                 None => format!("On ≤ {on_below:.0} W/m² · Off ≥ {off_above:.0} W/m² · All day"),
+            };
+            if let Some(window) = active_window {
+                view.window_enabled = true;
+                (view.start_kind, view.start_time, view.start_offset_minutes) =
+                    time_boundary_form_values(window.start, "09:00");
+                (view.end_kind, view.end_time, view.end_offset_minutes) =
+                    time_boundary_form_values(window.end, "17:00");
+                view.outside_turn_off = window.outside == OutsideWindowBehavior::TurnOff;
+            }
+            view
+        }
+    }
+}
+
+fn set_automation_weekdays(view: &mut AutomationView, weekdays: [bool; 7]) {
+    [
+        view.sun, view.mon, view.tue, view.wed, view.thu, view.fri, view.sat,
+    ] = weekdays;
+}
+
+fn time_boundary_form_values(
+    boundary: TimeBoundary,
+    default_time: &str,
+) -> (&'static str, String, i16) {
+    match boundary {
+        TimeBoundary::Fixed { minute_of_day } => (
+            "fixed",
+            format!("{:02}:{:02}", minute_of_day / 60, minute_of_day % 60),
+            0,
+        ),
+        TimeBoundary::Solar {
+            event,
+            offset_minutes,
+        } => (
+            match event {
+                SolarEvent::Sunrise => "sunrise",
+                SolarEvent::Sunset => "sunset",
             },
-        },
+            default_time.to_owned(),
+            offset_minutes,
+        ),
     }
 }
 
@@ -1920,6 +2079,7 @@ mod tests {
                 name: "Cloudy daytime".to_owned(),
                 on_below: 100.0,
                 off_above: 125.0,
+                window_enabled: Some("on".to_owned()),
                 start_kind: "fixed".to_owned(),
                 start_time: "09:00".to_owned(),
                 start_offset_minutes: 0,
@@ -1953,6 +2113,7 @@ mod tests {
                 name: "Cloudy daytime".to_owned(),
                 on_below: 125.0,
                 off_above: 125.0,
+                window_enabled: Some("on".to_owned()),
                 start_kind: "fixed".to_owned(),
                 start_time: "09:00".to_owned(),
                 start_offset_minutes: 0,
@@ -2013,13 +2174,55 @@ mod tests {
                     sunset: "8:18 PM".to_owned(),
                 }),
             }),
-            rules: vec![AutomationView {
-                id: 7,
-                title: "Sunset",
-                name: "Evening".to_owned(),
-                enabled: true,
-                description: "Turn on 30 min before sunset · Every day".to_owned(),
-            }],
+            rules: vec![
+                automation_view(AutomationRule {
+                    id: 7,
+                    device_id: "plug".to_owned(),
+                    name: "Evening".to_owned(),
+                    enabled: true,
+                    trigger: AutomationTrigger::Solar {
+                        event: SolarEvent::Sunset,
+                        offset_minutes: -30,
+                        weekdays: [true; 7],
+                    },
+                    turn_on: true,
+                    last_solar_day: None,
+                }),
+                automation_view(AutomationRule {
+                    id: 8,
+                    device_id: "plug".to_owned(),
+                    name: "Morning".to_owned(),
+                    enabled: true,
+                    trigger: AutomationTrigger::FixedTime {
+                        minute_of_day: 7 * 60 + 30,
+                        weekdays: [false, true, true, true, true, true, false],
+                    },
+                    turn_on: false,
+                    last_solar_day: None,
+                }),
+                automation_view(AutomationRule {
+                    id: 9,
+                    device_id: "plug".to_owned(),
+                    name: "Cloudy daytime".to_owned(),
+                    enabled: true,
+                    trigger: AutomationTrigger::LightLevel {
+                        on_below: 80.0,
+                        off_above: 120.0,
+                        active_window: Some(ActiveWindow {
+                            start: TimeBoundary::Fixed {
+                                minute_of_day: 9 * 60,
+                            },
+                            end: TimeBoundary::Solar {
+                                event: SolarEvent::Sunset,
+                                offset_minutes: -10,
+                            },
+                            outside: OutsideWindowBehavior::StopControlling,
+                        }),
+                    },
+                    turn_on: true,
+                    last_solar_day: None,
+                }),
+            ],
             schedules: SchedulePanel {
                 migratable_count: 1,
                 unsupported_count: 0,
@@ -2056,6 +2259,15 @@ mod tests {
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/solar\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/fixed\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/light\""));
+        assert!(fragment.contains("Edit schedule"));
+        assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/7/solar\""));
+        assert!(fragment.contains("value=\"-30\""));
+        assert!(fragment.contains("value=\"sunset\" selected"));
+        assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/8/fixed\""));
+        assert!(fragment.contains("name=\"time\" type=\"time\" required value=\"07:30\""));
+        assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/9/light\""));
+        assert!(fragment.contains("name=\"end_offset_minutes\" type=\"number\" min=\"-180\" max=\"180\" required value=\"-10\""));
+        assert!(fragment.contains("name=\"outside_window\" value=\"stop_controlling\" checked"));
         assert!(fragment.contains("Schedules still on the plug"));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/migrate\""));
         assert!(fragment.contains("Migrate 1 compatible schedule"));

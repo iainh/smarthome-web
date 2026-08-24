@@ -182,6 +182,27 @@ impl AutomationEngine {
         })
     }
 
+    pub fn update(&self, device_id: &str, id: u64, automation: NewAutomation) -> Result<bool> {
+        let Ok(id) = i64::try_from(id) else {
+            return Ok(false);
+        };
+        let trigger = serde_json::to_string(&automation.trigger)?;
+        self.database.with_connection(|connection| {
+            Ok(connection.execute(
+                "UPDATE automations
+                 SET name = ?1,
+                     last_solar_day = CASE
+                         WHEN trigger_json != ?2 OR turn_on != ?3 THEN NULL
+                         ELSE last_solar_day
+                     END,
+                     trigger_json = ?2,
+                     turn_on = ?3
+                 WHERE id = ?4 AND device_id = ?5",
+                params![automation.name, trigger, automation.turn_on, id, device_id],
+            )? != 0)
+        })
+    }
+
     pub fn delete(&self, device_id: &str, id: u64) -> Result<bool> {
         let Ok(id) = i64::try_from(id) else {
             return Ok(false);
@@ -1096,7 +1117,7 @@ mod tests {
     }
 
     #[test]
-    fn automation_rules_survive_engine_restart() {
+    fn automation_edits_persist_and_preserve_rule_state() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -1106,7 +1127,7 @@ mod tests {
             std::process::id()
         ));
         let engine = AutomationEngine::new(Arc::new(Database::open(&path).unwrap())).unwrap();
-        engine
+        let id = engine
             .add(NewAutomation {
                 device_id: "plug".to_owned(),
                 name: "Evening".to_owned(),
@@ -1119,20 +1140,84 @@ mod tests {
                 turn_on: true,
             })
             .unwrap();
+        engine
+            .database
+            .with_connection(|connection| {
+                connection.execute(
+                    "UPDATE automations SET last_solar_day = 123 WHERE id = ?1",
+                    [id as i64],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        assert!(engine
+            .update(
+                "plug",
+                id,
+                NewAutomation {
+                    device_id: "plug".to_owned(),
+                    name: "Renamed evening".to_owned(),
+                    enabled: true,
+                    trigger: AutomationTrigger::Solar {
+                        event: SolarEvent::Sunset,
+                        offset_minutes: -30,
+                        weekdays: every_day(),
+                    },
+                    turn_on: true,
+                },
+            )
+            .unwrap());
+        let renamed = engine.rules_for("plug").unwrap();
+        assert_eq!(renamed[0].name, "Renamed evening");
+        assert_eq!(renamed[0].last_solar_day, Some(123));
+        assert!(!renamed[0].enabled);
+        assert!(!engine
+            .update(
+                "another-plug",
+                id,
+                NewAutomation {
+                    device_id: "another-plug".to_owned(),
+                    name: "Wrong device".to_owned(),
+                    enabled: true,
+                    trigger: AutomationTrigger::FixedTime {
+                        minute_of_day: 8 * 60,
+                        weekdays: every_day(),
+                    },
+                    turn_on: false,
+                },
+            )
+            .unwrap());
+        assert!(engine
+            .update(
+                "plug",
+                id,
+                NewAutomation {
+                    device_id: "plug".to_owned(),
+                    name: "Weekday morning".to_owned(),
+                    enabled: true,
+                    trigger: AutomationTrigger::FixedTime {
+                        minute_of_day: 7 * 60 + 30,
+                        weekdays: [false, true, true, true, true, true, false],
+                    },
+                    turn_on: false,
+                },
+            )
+            .unwrap());
         drop(engine);
 
         let reloaded = AutomationEngine::new(Arc::new(Database::open(&path).unwrap())).unwrap();
         let rules = reloaded.rules_for("plug").unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].id, 1);
-        assert_eq!(rules[0].name, "Evening");
+        assert_eq!(rules[0].name, "Weekday morning");
         assert!(!rules[0].enabled);
+        assert!(!rules[0].turn_on);
+        assert_eq!(rules[0].last_solar_day, None);
         assert_eq!(
             rules[0].trigger,
-            AutomationTrigger::Solar {
-                event: SolarEvent::Sunset,
-                offset_minutes: -30,
-                weekdays: every_day(),
+            AutomationTrigger::FixedTime {
+                minute_of_day: 7 * 60 + 30,
+                weekdays: [false, true, true, true, true, true, false],
             }
         );
 
