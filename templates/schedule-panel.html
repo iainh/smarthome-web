@@ -35,10 +35,7 @@
           <summary>Edit fixed-time schedule</summary>
           <form class="schedule-form" hx-post="/plugs/{{ schedules.address }}/schedules/{{ rule.id }}" hx-target="#schedule-panel" hx-swap="outerHTML" hx-disabled-elt="find button">
             <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
-            <div class="form-row">
-              <label>Hour<input name="hour" type="number" min="0" max="23" required value="{{ rule.hour }}"></label>
-              <label>Minute<input name="minute" type="number" min="0" max="59" required value="{{ rule.minute }}"></label>
-            </div>
+            <label>Time<input name="time" type="time" required value="{{ rule.time }}"></label>
             <label>Action
               <select name="action">
                 <option value="on" {% if rule.action_on %}selected{% endif %}>Turn on</option>
@@ -46,13 +43,13 @@
               </select>
             </label>
             <div class="weekdays">
-              <label class="weekday"><input type="checkbox" name="sun" {% if rule.sun %}checked{% endif %}>S</label>
-              <label class="weekday"><input type="checkbox" name="mon" {% if rule.mon %}checked{% endif %}>M</label>
-              <label class="weekday"><input type="checkbox" name="tue" {% if rule.tue %}checked{% endif %}>T</label>
-              <label class="weekday"><input type="checkbox" name="wed" {% if rule.wed %}checked{% endif %}>W</label>
-              <label class="weekday"><input type="checkbox" name="thu" {% if rule.thu %}checked{% endif %}>T</label>
-              <label class="weekday"><input type="checkbox" name="fri" {% if rule.fri %}checked{% endif %}>F</label>
-              <label class="weekday"><input type="checkbox" name="sat" {% if rule.sat %}checked{% endif %}>S</label>
+              <label class="weekday"><input type="checkbox" name="sun" {% if rule.sun %}checked{% endif %}>Sun</label>
+              <label class="weekday"><input type="checkbox" name="mon" {% if rule.mon %}checked{% endif %}>Mon</label>
+              <label class="weekday"><input type="checkbox" name="tue" {% if rule.tue %}checked{% endif %}>Tue</label>
+              <label class="weekday"><input type="checkbox" name="wed" {% if rule.wed %}checked{% endif %}>Wed</label>
+              <label class="weekday"><input type="checkbox" name="thu" {% if rule.thu %}checked{% endif %}>Thu</label>
+              <label class="weekday"><input type="checkbox" name="fri" {% if rule.fri %}checked{% endif %}>Fri</label>
+              <label class="weekday"><input type="checkbox" name="sat" {% if rule.sat %}checked{% endif %}>Sat</label>
             </div>
             <button class="small-button" type="submit">Save schedule</button>
           </form>
@@ -80,13 +77,13 @@
               </select>
             </label>
             <div class="weekdays">
-              <label class="weekday"><input type="checkbox" name="sun" {% if rule.sun %}checked{% endif %}>S</label>
-              <label class="weekday"><input type="checkbox" name="mon" {% if rule.mon %}checked{% endif %}>M</label>
-              <label class="weekday"><input type="checkbox" name="tue" {% if rule.tue %}checked{% endif %}>T</label>
-              <label class="weekday"><input type="checkbox" name="wed" {% if rule.wed %}checked{% endif %}>W</label>
-              <label class="weekday"><input type="checkbox" name="thu" {% if rule.thu %}checked{% endif %}>T</label>
-              <label class="weekday"><input type="checkbox" name="fri" {% if rule.fri %}checked{% endif %}>F</label>
-              <label class="weekday"><input type="checkbox" name="sat" {% if rule.sat %}checked{% endif %}>S</label>
+              <label class="weekday"><input type="checkbox" name="sun" {% if rule.sun %}checked{% endif %}>Sun</label>
+              <label class="weekday"><input type="checkbox" name="mon" {% if rule.mon %}checked{% endif %}>Mon</label>
+              <label class="weekday"><input type="checkbox" name="tue" {% if rule.tue %}checked{% endif %}>Tue</label>
+              <label class="weekday"><input type="checkbox" name="wed" {% if rule.wed %}checked{% endif %}>Wed</label>
+              <label class="weekday"><input type="checkbox" name="thu" {% if rule.thu %}checked{% endif %}>Thu</label>
+              <label class="weekday"><input type="checkbox" name="fri" {% if rule.fri %}checked{% endif %}>Fri</label>
+              <label class="weekday"><input type="checkbox" name="sat" {% if rule.sat %}checked{% endif %}>Sat</label>
             </div>
             <span class="schedule-status">Use a negative offset for before the event.</span>
             <button class="small-button" type="submit">Save solar schedule</button>
@@ -104,10 +101,7 @@
     <summary>Add weekly schedule</summary>
     <form class="schedule-form" hx-post="/plugs/{{ schedules.address }}/schedules" hx-target="#schedule-panel" hx-swap="outerHTML" hx-disabled-elt="find button">
       <label>Name<input name="name" maxlength="64" required placeholder="Weekday morning"></label>
-      <div class="form-row">
-        <label>Hour<input name="hour" type="number" min="0" max="23" required value="7"></label>
-        <label>Minute<input name="minute" type="number" min="0" max="59" required value="0"></label>
-      </div>
+      <label>Time<input name="time" type="time" required value="07:00"></label>
       <label>Action
         <select name="action">
           <option value="on">Turn on</option>
@@ -115,13 +109,13 @@
         </select>
       </label>
       <div class="weekdays">
-        <label class="weekday"><input type="checkbox" name="sun">S</label>
-        <label class="weekday"><input type="checkbox" name="mon" checked>M</label>
-        <label class="weekday"><input type="checkbox" name="tue" checked>T</label>
-        <label class="weekday"><input type="checkbox" name="wed" checked>W</label>
-        <label class="weekday"><input type="checkbox" name="thu" checked>T</label>
-        <label class="weekday"><input type="checkbox" name="fri" checked>F</label>
-        <label class="weekday"><input type="checkbox" name="sat">S</label>
+        <label class="weekday"><input type="checkbox" name="sun">Sun</label>
+        <label class="weekday"><input type="checkbox" name="mon" checked>Mon</label>
+        <label class="weekday"><input type="checkbox" name="tue" checked>Tue</label>
+        <label class="weekday"><input type="checkbox" name="wed" checked>Wed</label>
+        <label class="weekday"><input type="checkbox" name="thu" checked>Thu</label>
+        <label class="weekday"><input type="checkbox" name="fri" checked>Fri</label>
+        <label class="weekday"><input type="checkbox" name="sat">Sat</label>
       </div>
       <button class="small-button" type="submit">Add schedule</button>
     </form>

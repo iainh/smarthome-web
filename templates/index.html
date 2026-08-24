@@ -43,6 +43,10 @@
     .device-pane { position: fixed; z-index: 10; inset: 0 0 0 auto; width: min(32rem, 100%); height: 100%; max-width: none; max-height: none; margin: 0 0 0 auto; overflow-y: auto; padding: 1.25rem; border: 0; border-left: 1px solid #334155; border-radius: 0; color: #e2e8f0; background: #0f172a; box-shadow: -1rem 0 3rem rgb(0 0 0 / 45%); }
     .device-pane::backdrop { background: rgb(2 6 23 / 68%); backdrop-filter: blur(2px); }
     .device-pane:not([open]) { display: none; }
+    .device-pane-resizer { position: fixed; z-index: 1; top: 0; bottom: 0; width: .65rem; margin-left: -1.25rem; cursor: ew-resize; touch-action: none; }
+    .device-pane-resizer::after { position: absolute; top: 50%; left: .25rem; width: .2rem; height: 3rem; border-radius: 999px; background: #475569; content: ""; transform: translateY(-50%); transition: background .15s; }
+    .device-pane-resizer:hover::after, .device-pane-resizer:focus-visible::after { background: #38bdf8; }
+    .resizing-pane { cursor: ew-resize; user-select: none; }
     .pane-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
     .pane-header h2 { margin: 0; font-size: 1.3rem; }
     .pane-close { padding: .35rem .7rem; color: #cbd5e1; background: #334155; font-size: 1.4rem; line-height: 1; }
@@ -65,9 +69,12 @@
     .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
     label { display: grid; gap: .25rem; color: #94a3b8; font-size: .75rem; }
     input, select { width: 100%; border: 1px solid #475569; border-radius: .45rem; padding: .5rem; color: #e2e8f0; background: #0f172a; font: inherit; }
-    .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: .25rem; }
-    .weekday { display: grid; place-items: center; gap: .2rem; padding: .35rem 0; border: 1px solid #475569; border-radius: .4rem; color: #cbd5e1; }
-    .weekday input { width: auto; margin: 0; }
+    .weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; }
+    .weekday { position: relative; display: grid; place-items: center; min-width: 0; padding: .55rem .1rem; border: 1px solid #475569; border-radius: .5rem; color: #94a3b8; cursor: pointer; font-size: .7rem; font-weight: 700; transition: background .15s, border-color .15s, color .15s; }
+    .weekday:hover { border-color: #64748b; color: #e2e8f0; }
+    .weekday:has(input:checked) { border-color: #3b82f6; color: #eff6ff; background: #2563eb; }
+    .weekday:has(input:focus-visible) { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+    .weekday input { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
     .advanced-note { margin: 0; color: #fbbf24; font-size: .75rem; }
     .timer-rule { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .8rem; border-radius: .75rem; background: #1e293b; }
     .timer-rule h3 { margin: 0; font-size: .9rem; }
@@ -102,6 +109,7 @@
     @media (max-width: 36rem) {
       header { align-items: stretch; flex-direction: column; }
       .plug-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .device-pane-resizer { display: none; }
     }
   </style>
 </head>
@@ -120,13 +128,72 @@
   </main>
   <dialog id="device-pane" class="device-pane" aria-label="Device controls"></dialog>
   <script>
+    const paneWidthKey = "kasa-device-pane-width";
+    let resizingPane = null;
+
+    function setPaneWidth(pane, requestedWidth) {
+      const minimumWidth = Math.min(320, window.innerWidth);
+      const width = Math.min(window.innerWidth, Math.max(minimumWidth, requestedWidth));
+      pane.style.width = width + "px";
+      const resizer = pane.querySelector(".device-pane-resizer");
+      if (resizer) {
+        resizer.setAttribute("aria-valuemin", minimumWidth);
+        resizer.setAttribute("aria-valuemax", window.innerWidth);
+        resizer.setAttribute("aria-valuenow", Math.round(width));
+      }
+    }
+
+    function restorePaneWidth(pane) {
+      let savedWidth = 0;
+      try {
+        savedWidth = Number(window.localStorage.getItem(paneWidthKey));
+      } catch (_) {}
+      setPaneWidth(pane, savedWidth > 0 ? savedWidth : pane.getBoundingClientRect().width);
+    }
+
+    function savePaneWidth(pane) {
+      try {
+        window.localStorage.setItem(paneWidthKey, Math.round(pane.getBoundingClientRect().width));
+      } catch (_) {}
+    }
+
     document.body.addEventListener("htmx:responseError", function (event) {
       window.alert(event.detail.xhr.responseText || "The device request failed.");
     });
     document.body.addEventListener("htmx:afterSwap", function (event) {
       if (event.detail.target.id === "device-pane") {
-        document.getElementById("device-pane").showModal();
+        const pane = document.getElementById("device-pane");
+        restorePaneWidth(pane);
+        pane.showModal();
       }
+    });
+    document.body.addEventListener("pointerdown", function (event) {
+      const resizer = event.target.closest(".device-pane-resizer");
+      if (!resizer) return;
+      resizingPane = resizer.closest(".device-pane");
+      resizer.setPointerCapture(event.pointerId);
+      document.body.classList.add("resizing-pane");
+      event.preventDefault();
+    });
+    document.body.addEventListener("pointermove", function (event) {
+      if (resizingPane) setPaneWidth(resizingPane, window.innerWidth - event.clientX);
+    });
+    function finishPaneResize() {
+      if (!resizingPane) return;
+      savePaneWidth(resizingPane);
+      resizingPane = null;
+      document.body.classList.remove("resizing-pane");
+    }
+    document.body.addEventListener("pointerup", finishPaneResize);
+    document.body.addEventListener("pointercancel", finishPaneResize);
+    document.body.addEventListener("keydown", function (event) {
+      if (!event.target.matches(".device-pane-resizer")) return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const pane = event.target.closest(".device-pane");
+      const adjustment = event.key === "ArrowLeft" ? 24 : -24;
+      setPaneWidth(pane, pane.getBoundingClientRect().width + adjustment);
+      savePaneWidth(pane);
+      event.preventDefault();
     });
   </script>
 </body>

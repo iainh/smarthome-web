@@ -117,8 +117,7 @@ struct CountdownView {
 #[derive(Deserialize)]
 struct ScheduleForm {
     name: String,
-    hour: u8,
-    minute: u8,
+    time: String,
     action: String,
     sun: Option<String>,
     mon: Option<String>,
@@ -181,8 +180,6 @@ struct ScheduleView {
     solar_event: &'static str,
     solar_offset: i16,
     weekday_summary: String,
-    hour: u16,
-    minute: u16,
     sun: bool,
     mon: bool,
     tue: bool,
@@ -700,11 +697,7 @@ impl TryFrom<ScheduleForm> for ScheduleInput {
 
     fn try_from(form: ScheduleForm) -> Result<Self, Self::Error> {
         let name = validated_schedule_name(&form.name)?;
-        if form.hour > 23 || form.minute > 59 {
-            return Err(AppError::bad_request(
-                "schedule time must be between 00:00 and 23:59",
-            ));
-        }
+        let minute_of_day = parse_schedule_time(&form.time)?;
         let turn_on = match form.action.as_str() {
             "on" => true,
             "off" => false,
@@ -716,7 +709,7 @@ impl TryFrom<ScheduleForm> for ScheduleInput {
 
         Ok(Self {
             name,
-            minute_of_day: u16::from(form.hour) * 60 + u16::from(form.minute),
+            minute_of_day,
             turn_on,
             weekdays,
         })
@@ -831,6 +824,31 @@ fn validated_schedule_name(value: &str) -> Result<String, AppError> {
         ));
     }
     Ok(name)
+}
+
+fn parse_schedule_time(value: &str) -> Result<u16, AppError> {
+    let (hour, minute) = value
+        .split_once(':')
+        .ok_or_else(|| AppError::bad_request("schedule time must use HH:MM format"))?;
+    if hour.len() != 2
+        || minute.len() != 2
+        || !hour.bytes().all(|character| character.is_ascii_digit())
+        || !minute.bytes().all(|character| character.is_ascii_digit())
+    {
+        return Err(AppError::bad_request("schedule time must use HH:MM format"));
+    }
+    let hour: u16 = hour
+        .parse()
+        .map_err(|_| AppError::bad_request("schedule time must use HH:MM format"))?;
+    let minute: u16 = minute
+        .parse()
+        .map_err(|_| AppError::bad_request("schedule time must use HH:MM format"))?;
+    if hour > 23 || minute > 59 {
+        return Err(AppError::bad_request(
+            "schedule time must be between 00:00 and 23:59",
+        ));
+    }
+    Ok(hour * 60 + minute)
 }
 
 fn schedule_weekdays(values: [Option<String>; 7]) -> Result<[bool; 7], AppError> {
@@ -1007,8 +1025,6 @@ fn schedule_view(rule: ScheduleRule) -> ScheduleView {
         } else {
             selected_days.join(", ")
         },
-        hour: rule.smin / 60,
-        minute: rule.smin % 60,
         sun: rule.weekdays[0],
         mon: rule.weekdays[1],
         tue: rule.weekdays[2],
@@ -1273,6 +1289,8 @@ mod tests {
         assert!(fragment.contains("id=\"schedule-panel\""));
         assert!(fragment.contains("Device schedules"));
         assert!(fragment.contains("Weather rules"));
+        assert!(fragment.contains("role=\"separator\""));
+        assert!(fragment.contains("aria-label=\"Resize automation pane\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/solar\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/light\""));
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/automations/7\""));
@@ -1331,10 +1349,13 @@ mod tests {
 
     #[test]
     fn schedule_form_validates_time_and_weekdays() {
+        assert_eq!(parse_schedule_time("07:15").unwrap(), 435);
+        assert!(parse_schedule_time("7:15").is_err());
+        assert!(parse_schedule_time("23:60").is_err());
+
         let invalid_time = ScheduleForm {
             name: "Morning".to_owned(),
-            hour: 24,
-            minute: 0,
+            time: "24:00".to_owned(),
             action: "on".to_owned(),
             sun: Some("on".to_owned()),
             mon: None,
@@ -1348,8 +1369,7 @@ mod tests {
 
         let no_weekdays = ScheduleForm {
             name: "Morning".to_owned(),
-            hour: 7,
-            minute: 30,
+            time: "07:30".to_owned(),
             action: "on".to_owned(),
             sun: None,
             mon: None,
@@ -1397,8 +1417,6 @@ mod tests {
                 solar_event: "",
                 solar_offset: 0,
                 weekday_summary: "Mon, Tue".to_owned(),
-                hour: 7,
-                minute: 30,
                 sun: false,
                 mon: true,
                 tue: true,
@@ -1421,6 +1439,11 @@ mod tests {
         assert!(fragment.contains("id=\"schedule-panel\""));
         assert!(fragment.contains("hx-target=\"#schedule-panel\""));
         assert!(!fragment.contains("<dialog"));
+        assert!(fragment.contains("name=\"time\" type=\"time\" required value=\"07:30\""));
+        assert!(!fragment.contains("name=\"hour\""));
+        assert!(!fragment.contains("name=\"minute\""));
+        assert!(fragment.contains("name=\"mon\" checked>Mon"));
+        assert!(fragment.contains("name=\"sun\" >Sun"));
         assert!(fragment.contains("&lt;Morning&gt;"));
         assert!(!fragment.contains("<Morning>"));
     }
