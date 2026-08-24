@@ -77,6 +77,7 @@ struct AutomationPanel {
     location_available: bool,
     weather: Option<WeatherStatus>,
     rules: Vec<AutomationView>,
+    schedules: SchedulePanel,
 }
 
 #[derive(Serialize)]
@@ -295,10 +296,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             "/plugs/{address}/countdown/{id}",
             axum::routing::delete(delete_countdown),
         )
-        .route(
-            "/plugs/{address}/schedules",
-            get(get_schedules).post(create_schedule),
-        )
+        .route("/plugs/{address}/schedules", post(create_schedule))
         .route(
             "/plugs/{address}/schedules/enabled",
             post(set_schedules_enabled),
@@ -457,15 +455,6 @@ async fn delete_countdown(
     })
     .await??;
     render_countdown_panel(&state, &panel)
-}
-
-async fn get_schedules(
-    State(state): State<Arc<AppState>>,
-    Path(address): Path<IpAddr>,
-) -> Result<Html<String>, AppError> {
-    let client = state.client.clone();
-    let panel = task::spawn_blocking(move || load_schedule_panel(&client, address)).await??;
-    render_schedule_panel(&state, &panel)
 }
 
 async fn create_schedule(
@@ -874,11 +863,16 @@ async fn load_automation_panel(
     } else {
         None
     };
+    let schedule_client = state.client.clone();
+    let address = plug.address;
+    let schedules =
+        task::spawn_blocking(move || load_schedule_panel(&schedule_client, address)).await??;
     Ok(AutomationPanel {
         address: plug.address.to_string(),
         location_available,
         weather,
         rules: rules.into_iter().map(automation_view).collect(),
+        schedules,
     })
 }
 
@@ -1059,7 +1053,7 @@ fn render_schedule_panel(
     let fragment = state
         .templates
         .get_template("schedule-panel.html")?
-        .render(context! { panel })?;
+        .render(context! { schedules => panel })?;
     Ok(Html(fragment))
 }
 
@@ -1154,6 +1148,7 @@ mod tests {
         assert!(page.contains("hx-post=\"/plugs/192.0.2.1/relay\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/automations\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/countdown\""));
+        assert!(!page.contains("hx-get=\"/plugs/192.0.2.1/schedules\""));
         assert!(page.contains("hx-target=\"#device-pane\""));
         assert!(page.contains("id=\"device-pane\""));
         assert!(page.contains("&lt;Desk lamp&gt;"));
@@ -1252,6 +1247,11 @@ mod tests {
                 title: "Sunset",
                 description: "Turn on 30 min before sunset".to_owned(),
             }],
+            schedules: SchedulePanel {
+                address: "192.0.2.1".to_owned(),
+                enabled: true,
+                rules: Vec::new(),
+            },
         };
 
         let fragment = templates()
@@ -1270,6 +1270,9 @@ mod tests {
         assert!(fragment.contains("class=\"solar-line sunrise-line\" x1=\"114.8\""));
         assert!(fragment.contains("Sunrise 06:36"));
         assert!(fragment.contains("Sunset 20:18"));
+        assert!(fragment.contains("id=\"schedule-panel\""));
+        assert!(fragment.contains("Device schedules"));
+        assert!(fragment.contains("Weather rules"));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/solar\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/light\""));
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/automations/7\""));
@@ -1410,14 +1413,14 @@ mod tests {
             .unwrap()
             .get_template("schedule-panel.html")
             .unwrap()
-            .render(context! { panel })
+            .render(context! { schedules => panel })
             .unwrap();
 
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/schedules/rule-id\""));
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/schedules/rule-id\""));
-        assert!(fragment.contains("id=\"device-pane\""));
-        assert!(fragment.contains("<dialog id=\"device-pane\" class=\"device-pane\""));
-        assert!(fragment.contains("hx-target=\"closest .device-pane\""));
+        assert!(fragment.contains("id=\"schedule-panel\""));
+        assert!(fragment.contains("hx-target=\"#schedule-panel\""));
+        assert!(!fragment.contains("<dialog"));
         assert!(fragment.contains("&lt;Morning&gt;"));
         assert!(!fragment.contains("<Morning>"));
     }
@@ -1516,7 +1519,7 @@ mod tests {
             .unwrap()
             .get_template("schedule-panel.html")
             .unwrap()
-            .render(context! { panel })
+            .render(context! { schedules => panel })
             .unwrap();
 
         assert!(fragment.contains("30 min before sunset · Turn on · Every day"));
