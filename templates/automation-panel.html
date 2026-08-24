@@ -45,11 +45,11 @@
             <text class="chart-label" x="36" y="15" text-anchor="end">{{ history.max_radiation }}</text>
             <text class="chart-label" x="36" y="69" text-anchor="end">{{ history.mid_radiation }}</text>
             <text class="chart-label" x="36" y="123" text-anchor="end">0</text>
-            <text class="chart-label" x="40" y="138" text-anchor="middle">00</text>
-            <text class="chart-label" x="108" y="138" text-anchor="middle">06</text>
-            <text class="chart-label" x="176" y="138" text-anchor="middle">12</text>
-            <text class="chart-label" x="244" y="138" text-anchor="middle">18</text>
-            <text class="chart-label" x="312" y="138" text-anchor="middle">24</text>
+            <text class="chart-label" x="40" y="138" text-anchor="middle">12 AM</text>
+            <text class="chart-label" x="108" y="138" text-anchor="middle">6 AM</text>
+            <text class="chart-label" x="176" y="138" text-anchor="middle">12 PM</text>
+            <text class="chart-label" x="244" y="138" text-anchor="middle">6 PM</text>
+            <text class="chart-label" x="312" y="138" text-anchor="middle">12 AM</text>
             <line class="solar-line sunrise-line" x1="{{ history.sunrise_x }}" y1="12" x2="{{ history.sunrise_x }}" y2="120"></line>
             <line class="solar-line sunset-line" x1="{{ history.sunset_x }}" y1="12" x2="{{ history.sunset_x }}" y2="120"></line>
             <polyline class="light-average-line" points="{% for point in history.average_points %}{{ point.x }},{{ point.y }} {% endfor %}">

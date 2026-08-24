@@ -240,6 +240,7 @@ struct ScheduleView {
     editable: bool,
     solar_editable: bool,
     time: String,
+    time_value: String,
     action: &'static str,
     action_on: bool,
     solar_event: &'static str,
@@ -1530,8 +1531,12 @@ fn schedule_view(rule: ScheduleRule) -> ScheduleView {
         2 => ("sunset", "sunset"),
         _ => ("", ""),
     };
-    let time = match rule.stime_opt {
+    let time_value = match rule.stime_opt {
         0 if rule.smin < 24 * 60 => format!("{:02}:{:02}", rule.smin / 60, rule.smin % 60),
+        _ => String::new(),
+    };
+    let time = match rule.stime_opt {
+        0 if rule.smin < 24 * 60 => automation::format_clock_time(rule.smin / 60, rule.smin % 60),
         1 | 2 => solar_schedule_time(event_name, rule.soffset.unwrap_or_default()),
         _ => "Solar/advanced".to_owned(),
     };
@@ -1543,6 +1548,7 @@ fn schedule_view(rule: ScheduleRule) -> ScheduleView {
         editable,
         solar_editable,
         time,
+        time_value,
         action: match rule.sact {
             1 => "Turn on",
             0 => "Turn off",
@@ -1916,7 +1922,7 @@ mod tests {
             address: "192.0.2.1".to_owned(),
             location_available: true,
             weather: Some(WeatherStatus {
-                local_time: "20:15".to_owned(),
+                local_time: "8:15 PM".to_owned(),
                 timezone: "GMT-4".to_owned(),
                 condition: "Overcast",
                 is_day: false,
@@ -1925,27 +1931,27 @@ mod tests {
                 temperature: 13.4,
                 apparent_temperature: 11.9,
                 precipitation: 0.0,
-                sunrise: "06:33".to_owned(),
-                sunset: "20:19".to_owned(),
+                sunrise: "6:33 AM".to_owned(),
+                sunset: "8:19 PM".to_owned(),
                 previous_day_light: Some(LightHistory {
                     points: vec![
                         LightPoint {
                             x: 40.0,
                             y: 120.0,
-                            time: "00:00".to_owned(),
+                            time: "12:00 AM".to_owned(),
                             radiation: 0.0,
                         },
                         LightPoint {
                             x: 176.0,
                             y: 12.0,
-                            time: "12:00".to_owned(),
+                            time: "12:00 PM".to_owned(),
                             radiation: 500.0,
                         },
                     ],
                     average_points: vec![LightPoint {
                         x: 176.0,
                         y: 33.6,
-                        time: "12:00".to_owned(),
+                        time: "12:00 PM".to_owned(),
                         radiation: 400.0,
                     }],
                     average_days: 30,
@@ -1953,8 +1959,8 @@ mod tests {
                     mid_radiation: 250,
                     sunrise_x: 114.8,
                     sunset_x: 270.1,
-                    sunrise: "06:36".to_owned(),
-                    sunset: "20:18".to_owned(),
+                    sunrise: "6:36 AM".to_owned(),
+                    sunset: "8:18 PM".to_owned(),
                 }),
             }),
             rules: vec![AutomationView {
@@ -1977,7 +1983,7 @@ mod tests {
             .unwrap();
 
         assert!(fragment.contains("Turn on 30 min before sunset"));
-        assert!(fragment.contains("20:15 GMT-4"));
+        assert!(fragment.contains("8:15 PM GMT-4"));
         assert!(fragment.contains("42.5 W/m²"));
         assert!(fragment.contains("Overcast"));
         assert!(fragment.contains("Yesterday's outdoor light"));
@@ -1985,8 +1991,8 @@ mod tests {
         assert!(fragment.contains("class=\"light-average-line\""));
         assert!(fragment.contains("class=\"light-line\""));
         assert!(fragment.contains("class=\"solar-line sunrise-line\" x1=\"114.8\""));
-        assert!(fragment.contains("Sunrise 06:36"));
-        assert!(fragment.contains("Sunset 20:18"));
+        assert!(fragment.contains("Sunrise 6:36 AM"));
+        assert!(fragment.contains("Sunset 8:18 PM"));
         assert!(fragment.contains("id=\"schedule-panel\""));
         assert!(fragment.contains("Device schedules"));
         assert!(fragment.contains("Weather rules"));
@@ -2112,7 +2118,8 @@ mod tests {
                 enabled: true,
                 editable: true,
                 solar_editable: false,
-                time: "07:30".to_owned(),
+                time: "7:30 AM".to_owned(),
+                time_value: "07:30".to_owned(),
                 action: "Turn on",
                 action_on: true,
                 solar_event: "",
@@ -2140,6 +2147,7 @@ mod tests {
         assert!(fragment.contains("id=\"schedule-panel\""));
         assert!(fragment.contains("hx-target=\"#schedule-panel\""));
         assert!(!fragment.contains("<dialog"));
+        assert!(fragment.contains("7:30 AM · Turn on · Mon, Tue"));
         assert!(fragment.contains("name=\"time\" type=\"time\" required value=\"07:30\""));
         assert!(!fragment.contains("name=\"hour\""));
         assert!(!fragment.contains("name=\"minute\""));

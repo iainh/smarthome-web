@@ -35,7 +35,7 @@
           <summary>Edit fixed-time schedule</summary>
           <form class="schedule-form" hx-post="/plugs/{{ schedules.address }}/schedules/{{ rule.id }}" hx-target="#schedule-panel" hx-swap="outerHTML" hx-disabled-elt="find button">
             <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
-            <label>Time<input name="time" type="time" required value="{{ rule.time }}"></label>
+            <label>Time<input name="time" type="time" required value="{{ rule.time_value }}"></label>
             <label>Action
               <select name="action">
                 <option value="on" {% if rule.action_on %}selected{% endif %}>Turn on</option>

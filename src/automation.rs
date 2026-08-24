@@ -582,7 +582,7 @@ fn light_history(
         .map(|(hour, radiation)| LightPoint {
             x: rounded(40.0 + hour as f64 / 24.0 * 272.0),
             y: y(radiation),
-            time: format!("{hour:02}:00"),
+            time: format_clock_time(hour as u16, 0),
             radiation: rounded(radiation),
         })
         .collect();
@@ -620,7 +620,16 @@ fn invalid_weather_data(name: &str) -> Box<dyn Error + Send + Sync> {
 
 fn local_time(timestamp: i64, utc_offset_seconds: i32) -> String {
     let seconds = (timestamp + i64::from(utc_offset_seconds)).rem_euclid(24 * 60 * 60);
-    format!("{:02}:{:02}", seconds / 3_600, (seconds % 3_600) / 60)
+    format_clock_time((seconds / 3_600) as u16, ((seconds % 3_600) / 60) as u16)
+}
+
+pub(crate) fn format_clock_time(hour: u16, minute: u16) -> String {
+    let suffix = if hour < 12 { "AM" } else { "PM" };
+    let hour = match hour % 12 {
+        0 => 12,
+        hour => hour,
+    };
+    format!("{hour}:{minute:02} {suffix}")
 }
 
 fn weather_condition(code: u8) -> &'static str {
@@ -667,6 +676,14 @@ mod tests {
             is_day: true,
             previous_day_light: None,
         }
+    }
+
+    #[test]
+    fn clock_times_use_twelve_hour_format() {
+        assert_eq!(format_clock_time(0, 0), "12:00 AM");
+        assert_eq!(format_clock_time(11, 5), "11:05 AM");
+        assert_eq!(format_clock_time(12, 0), "12:00 PM");
+        assert_eq!(format_clock_time(23, 59), "11:59 PM");
     }
 
     #[test]
@@ -747,8 +764,8 @@ mod tests {
         let history = snapshot.previous_day_light.as_ref().unwrap();
         assert_eq!(history.points.len(), 6);
         assert_eq!(history.max_radiation, 500);
-        assert_eq!(history.sunrise, "06:00");
-        assert_eq!(history.sunset, "18:00");
+        assert_eq!(history.sunrise, "6:00 AM");
+        assert_eq!(history.sunset, "6:00 PM");
         assert_eq!(history.sunrise_x, 153.3);
         assert_eq!(history.sunset_x, 289.3);
         assert_eq!(history.points[3].radiation, 500.0);
@@ -757,11 +774,11 @@ mod tests {
         let average_at_eight = history
             .average_points
             .iter()
-            .find(|point| point.time == "08:00")
+            .find(|point| point.time == "8:00 AM")
             .unwrap();
         assert_eq!(average_at_eight.radiation, 500.0);
         let status = snapshot.status();
-        assert_eq!(status.local_time, "23:46");
+        assert_eq!(status.local_time, "11:46 PM");
         assert_eq!(status.condition, "Overcast");
         assert_eq!(status.cloud_cover, 100);
         assert!(!status.is_day);
@@ -787,7 +804,7 @@ mod tests {
 
         assert_eq!(history.average_days, 3);
         assert_eq!(history.average_points.len(), 1);
-        assert_eq!(history.average_points[0].time, "12:00");
+        assert_eq!(history.average_points[0].time, "12:00 PM");
         assert_eq!(history.average_points[0].radiation, 300.0);
         assert_eq!(history.average_points[0].x, 176.0);
         assert_eq!(history.average_points[0].y, 12.0);
