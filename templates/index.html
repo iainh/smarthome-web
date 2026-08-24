@@ -80,6 +80,22 @@
     .weather-grid div { min-width: 0; }
     .weather-grid dt { font-size: .72rem; }
     .weather-grid dd { margin-top: .15rem; font-size: .9rem; font-weight: 700; }
+    .light-chart { margin: .25rem 0 0; padding-top: .75rem; border-top: 1px solid #334155; }
+    .light-chart figcaption { display: grid; gap: .15rem; margin-bottom: .35rem; }
+    .light-chart figcaption strong { font-size: .85rem; }
+    .light-chart figcaption span, .chart-legend { color: #94a3b8; font-size: .7rem; }
+    .light-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .chart-grid, .chart-axis { stroke: #475569; stroke-width: 1; }
+    .chart-grid { stroke-dasharray: 2 3; }
+    .chart-label { fill: #94a3b8; font-size: 8px; }
+    .light-line { fill: none; stroke: #38bdf8; stroke-linejoin: round; stroke-width: 2.5; }
+    .light-point { fill: #bae6fd; stroke: #0c4a6e; stroke-width: 1; }
+    .solar-line { stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .sunrise-line, .sunrise-key { stroke: #fbbf24; background: #fbbf24; }
+    .sunset-line, .sunset-key { stroke: #fb7185; background: #fb7185; }
+    .chart-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; padding-left: 2rem; }
+    .chart-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+    .chart-legend i { width: .75rem; height: 2px; }
     .empty { padding: 3rem 1rem; border: 1px dashed #475569; border-radius: 1rem; color: #94a3b8; text-align: center; }
     .htmx-request .button-label { opacity: .5; }
     @media (max-width: 36rem) {

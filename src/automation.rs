@@ -64,6 +64,26 @@ pub struct WeatherStatus {
     pub precipitation: f64,
     pub sunrise: String,
     pub sunset: String,
+    pub previous_day_light: Option<LightHistory>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LightHistory {
+    pub points: Vec<LightPoint>,
+    pub max_radiation: u32,
+    pub mid_radiation: u32,
+    pub sunrise_x: f64,
+    pub sunset_x: f64,
+    pub sunrise: String,
+    pub sunset: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LightPoint {
+    pub x: f64,
+    pub y: f64,
+    pub time: String,
+    pub radiation: f64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -245,9 +265,11 @@ impl AutomationEngine {
                     "temperature_2m,apparent_temperature,precipitation,weather_code,cloud_cover,is_day,shortwave_radiation",
                 ),
                 ("daily", "sunrise,sunset"),
+                ("hourly", "shortwave_radiation"),
                 ("timezone", "auto"),
                 ("timeformat", "unixtime"),
                 ("forecast_days", "1"),
+                ("past_days", "1"),
             ])
             .send()
             .await?
@@ -302,6 +324,7 @@ struct WeatherResponse {
     timezone_abbreviation: String,
     current: CurrentWeather,
     daily: DailyWeather,
+    hourly: HourlyWeather,
 }
 
 #[derive(Debug, Deserialize)]
@@ -323,6 +346,12 @@ struct DailyWeather {
     sunset: Vec<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+struct HourlyWeather {
+    time: Vec<i64>,
+    shortwave_radiation: Vec<Option<f64>>,
+}
+
 #[derive(Debug, Clone)]
 struct WeatherSnapshot {
     time: i64,
@@ -338,15 +367,36 @@ struct WeatherSnapshot {
     weather_code: u8,
     cloud_cover: u8,
     is_day: bool,
+    previous_day_light: Option<LightHistory>,
 }
 
 impl WeatherResponse {
     fn snapshot(self) -> Result<WeatherSnapshot> {
+        let day_index = self
+            .daily
+            .time
+            .iter()
+            .rposition(|day| *day <= self.current.time)
+            .ok_or_else(|| invalid_weather_data("daily time"))?;
+        let day = value_at(&self.daily.time, day_index, "daily time")?;
+        let sunrise = value_at(&self.daily.sunrise, day_index, "sunrise")?;
+        let sunset = value_at(&self.daily.sunset, day_index, "sunset")?;
+        let previous_day_light = day_index.checked_sub(1).and_then(|previous_index| {
+            light_history(
+                &self.hourly,
+                value_at(&self.daily.time, previous_index, "previous daily time").ok()?,
+                day,
+                value_at(&self.daily.sunrise, previous_index, "previous sunrise").ok()?,
+                value_at(&self.daily.sunset, previous_index, "previous sunset").ok()?,
+                self.utc_offset_seconds,
+            )
+        });
+
         Ok(WeatherSnapshot {
             time: self.current.time,
-            day: first_value(&self.daily.time, "daily time")?,
-            sunrise: first_value(&self.daily.sunrise, "sunrise")?,
-            sunset: first_value(&self.daily.sunset, "sunset")?,
+            day,
+            sunrise,
+            sunset,
             shortwave_radiation: self.current.shortwave_radiation,
             utc_offset_seconds: self.utc_offset_seconds,
             timezone_abbreviation: self.timezone_abbreviation,
@@ -356,6 +406,7 @@ impl WeatherResponse {
             weather_code: self.current.weather_code,
             cloud_cover: self.current.cloud_cover,
             is_day: self.current.is_day != 0,
+            previous_day_light,
         })
     }
 }
@@ -374,6 +425,7 @@ impl WeatherSnapshot {
             precipitation: self.precipitation,
             sunrise: local_time(self.sunrise, self.utc_offset_seconds),
             sunset: local_time(self.sunset, self.utc_offset_seconds),
+            previous_day_light: self.previous_day_light.clone(),
         }
     }
 }
@@ -422,13 +474,70 @@ fn evaluate_rule(rule: &AutomationRule, weather: &WeatherSnapshot) -> Option<Rul
     }
 }
 
-fn first_value(values: &[i64], name: &str) -> Result<i64> {
-    values.first().copied().ok_or_else(|| {
-        Box::new(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Open-Meteo response omitted {name}"),
-        )) as Box<dyn Error + Send + Sync>
+fn light_history(
+    hourly: &HourlyWeather,
+    day_start: i64,
+    day_end: i64,
+    sunrise: i64,
+    sunset: i64,
+    utc_offset_seconds: i32,
+) -> Option<LightHistory> {
+    let readings: Vec<_> = hourly
+        .time
+        .iter()
+        .copied()
+        .zip(hourly.shortwave_radiation.iter().copied())
+        .filter_map(|(time, radiation)| {
+            (time >= day_start && time < day_end).then_some((time, radiation?))
+        })
+        .collect();
+    if readings.is_empty() || day_end <= day_start {
+        return None;
+    }
+
+    let observed_max = readings
+        .iter()
+        .map(|(_, radiation)| *radiation)
+        .fold(0.0_f64, f64::max);
+    let max_radiation = ((observed_max / 100.0).ceil().max(1.0) * 100.0) as u32;
+    let x = |time| 40.0 + (time - day_start) as f64 / (day_end - day_start) as f64 * 272.0;
+    let points = readings
+        .into_iter()
+        .map(|(time, radiation)| LightPoint {
+            x: rounded(x(time)),
+            y: rounded(120.0 - radiation.max(0.0) / f64::from(max_radiation) * 108.0),
+            time: local_time(time, utc_offset_seconds),
+            radiation,
+        })
+        .collect();
+
+    Some(LightHistory {
+        points,
+        max_radiation,
+        mid_radiation: max_radiation / 2,
+        sunrise_x: rounded(x(sunrise)),
+        sunset_x: rounded(x(sunset)),
+        sunrise: local_time(sunrise, utc_offset_seconds),
+        sunset: local_time(sunset, utc_offset_seconds),
     })
+}
+
+fn rounded(value: f64) -> f64 {
+    (value * 10.0).round() / 10.0
+}
+
+fn value_at(values: &[i64], index: usize, name: &str) -> Result<i64> {
+    values
+        .get(index)
+        .copied()
+        .ok_or_else(|| invalid_weather_data(name))
+}
+
+fn invalid_weather_data(name: &str) -> Box<dyn Error + Send + Sync> {
+    Box::new(io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("Open-Meteo response omitted {name}"),
+    ))
 }
 
 fn local_time(timestamp: i64, utc_offset_seconds: i32) -> String {
@@ -482,6 +591,7 @@ mod tests {
             weather_code: 0,
             cloud_cover: 0,
             is_day: true,
+            previous_day_light: None,
         }
     }
 
@@ -533,7 +643,7 @@ mod tests {
             "utc_offset_seconds": -14_400,
             "timezone_abbreviation": "GMT-4",
             "current": {
-                "time": 10_000,
+                "time": 100_000,
                 "temperature_2m": 13.4,
                 "apparent_temperature": 11.9,
                 "precipitation": 0.0,
@@ -543,21 +653,34 @@ mod tests {
                 "shortwave_radiation": 42.5
             },
             "daily": {
-                "time": [8_000],
-                "sunrise": [9_000],
-                "sunset": [12_000]
+                "time": [0, 86_400],
+                "sunrise": [36_000, 122_400],
+                "sunset": [79_200, 165_600]
+            },
+            "hourly": {
+                "time": [0, 21_600, 36_000, 43_200, 64_800, 82_800, 86_400],
+                "shortwave_radiation": [0.0, 0.0, 100.0, 500.0, 50.0, 0.0, 0.0]
             }
         }))
         .unwrap();
 
         let snapshot = response.snapshot().unwrap();
-        assert_eq!(snapshot.time, 10_000);
-        assert_eq!(snapshot.day, 8_000);
-        assert_eq!(snapshot.sunrise, 9_000);
-        assert_eq!(snapshot.sunset, 12_000);
+        assert_eq!(snapshot.time, 100_000);
+        assert_eq!(snapshot.day, 86_400);
+        assert_eq!(snapshot.sunrise, 122_400);
+        assert_eq!(snapshot.sunset, 165_600);
         assert_eq!(snapshot.shortwave_radiation, 42.5);
+        let history = snapshot.previous_day_light.as_ref().unwrap();
+        assert_eq!(history.points.len(), 6);
+        assert_eq!(history.max_radiation, 500);
+        assert_eq!(history.sunrise, "06:00");
+        assert_eq!(history.sunset, "18:00");
+        assert_eq!(history.sunrise_x, 153.3);
+        assert_eq!(history.sunset_x, 289.3);
+        assert_eq!(history.points[3].radiation, 500.0);
+        assert_eq!(history.points[3].y, 12.0);
         let status = snapshot.status();
-        assert_eq!(status.local_time, "22:46");
+        assert_eq!(status.local_time, "23:46");
         assert_eq!(status.condition, "Overcast");
         assert_eq!(status.cloud_cover, 100);
         assert!(!status.is_day);

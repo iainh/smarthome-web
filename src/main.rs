@@ -982,6 +982,7 @@ fn templates() -> Result<Environment<'static>, minijinja::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::automation::{LightHistory, LightPoint};
 
     #[test]
     fn configured_device_addresses_are_trimmed_sorted_and_deduplicated() {
@@ -1087,6 +1088,28 @@ mod tests {
                 precipitation: 0.0,
                 sunrise: "06:33".to_owned(),
                 sunset: "20:19".to_owned(),
+                previous_day_light: Some(LightHistory {
+                    points: vec![
+                        LightPoint {
+                            x: 40.0,
+                            y: 120.0,
+                            time: "00:00".to_owned(),
+                            radiation: 0.0,
+                        },
+                        LightPoint {
+                            x: 176.0,
+                            y: 12.0,
+                            time: "12:00".to_owned(),
+                            radiation: 500.0,
+                        },
+                    ],
+                    max_radiation: 500,
+                    mid_radiation: 250,
+                    sunrise_x: 114.8,
+                    sunset_x: 270.1,
+                    sunrise: "06:36".to_owned(),
+                    sunset: "20:18".to_owned(),
+                }),
             }),
             rules: vec![AutomationView {
                 id: 7,
@@ -1106,6 +1129,11 @@ mod tests {
         assert!(fragment.contains("20:15 GMT-4"));
         assert!(fragment.contains("42.5 W/m²"));
         assert!(fragment.contains("Overcast"));
+        assert!(fragment.contains("Yesterday's outdoor light"));
+        assert!(fragment.contains("class=\"light-line\""));
+        assert!(fragment.contains("class=\"solar-line sunrise-line\" x1=\"114.8\""));
+        assert!(fragment.contains("Sunrise 06:36"));
+        assert!(fragment.contains("Sunset 20:18"));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/solar\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/light\""));
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/automations/7\""));

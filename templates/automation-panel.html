@@ -27,6 +27,40 @@
         <div><dt>Sunrise</dt><dd>{{ panel.weather.sunrise }}</dd></div>
         <div><dt>Sunset</dt><dd>{{ panel.weather.sunset }}</dd></div>
       </dl>
+      {% if panel.weather.previous_day_light %}
+        {% set history = panel.weather.previous_day_light %}
+        <figure class="light-chart">
+          <figcaption>
+            <strong>Yesterday's outdoor light</strong>
+            <span>Hourly shortwave radiation (W/m²)</span>
+          </figcaption>
+          <svg viewBox="0 0 320 148" role="img" aria-label="Yesterday's hourly outdoor light levels, with sunrise and sunset marked">
+            <line class="chart-grid" x1="40" y1="12" x2="312" y2="12"></line>
+            <line class="chart-grid" x1="40" y1="66" x2="312" y2="66"></line>
+            <line class="chart-axis" x1="40" y1="120" x2="312" y2="120"></line>
+            <text class="chart-label" x="36" y="15" text-anchor="end">{{ history.max_radiation }}</text>
+            <text class="chart-label" x="36" y="69" text-anchor="end">{{ history.mid_radiation }}</text>
+            <text class="chart-label" x="36" y="123" text-anchor="end">0</text>
+            <text class="chart-label" x="40" y="138" text-anchor="middle">00</text>
+            <text class="chart-label" x="108" y="138" text-anchor="middle">06</text>
+            <text class="chart-label" x="176" y="138" text-anchor="middle">12</text>
+            <text class="chart-label" x="244" y="138" text-anchor="middle">18</text>
+            <text class="chart-label" x="312" y="138" text-anchor="middle">24</text>
+            <line class="solar-line sunrise-line" x1="{{ history.sunrise_x }}" y1="12" x2="{{ history.sunrise_x }}" y2="120"></line>
+            <line class="solar-line sunset-line" x1="{{ history.sunset_x }}" y1="12" x2="{{ history.sunset_x }}" y2="120"></line>
+            <polyline class="light-line" points="{% for point in history.points %}{{ point.x }},{{ point.y }} {% endfor %}"></polyline>
+            {% for point in history.points %}
+              <circle class="light-point" cx="{{ point.x }}" cy="{{ point.y }}" r="2.5">
+                <title>{{ point.time }} — {{ point.radiation }} W/m²</title>
+              </circle>
+            {% endfor %}
+          </svg>
+          <div class="chart-legend">
+            <span><i class="sunrise-key"></i>Sunrise {{ history.sunrise }}</span>
+            <span><i class="sunset-key"></i>Sunset {{ history.sunset }}</span>
+          </div>
+        </figure>
+      {% endif %}
     {% else %}
       <p class="schedule-status">Current weather is unavailable.</p>
     {% endif %}
