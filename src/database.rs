@@ -69,6 +69,8 @@ impl Database {
              CREATE TABLE IF NOT EXISTS automations (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  device_id TEXT NOT NULL,
+                 name TEXT NOT NULL DEFAULT '',
+                 enabled INTEGER NOT NULL DEFAULT 1,
                  trigger_json TEXT NOT NULL,
                  turn_on INTEGER NOT NULL,
                  last_solar_day INTEGER
@@ -106,6 +108,22 @@ impl Database {
              CREATE INDEX IF NOT EXISTS open_meteo_history_fetched_at
                  ON open_meteo_history(fetched_at);",
         )?;
+        let automation_columns = connection
+            .prepare("PRAGMA table_info(automations)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if !automation_columns.iter().any(|column| column == "name") {
+            connection.execute(
+                "ALTER TABLE automations ADD COLUMN name TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        if !automation_columns.iter().any(|column| column == "enabled") {
+            connection.execute(
+                "ALTER TABLE automations ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+                [],
+            )?;
+        }
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -404,6 +422,46 @@ mod tests {
         assert!(database.remove_device("device-1").unwrap());
         assert!(!database.remove_device("device-1").unwrap());
         assert!(database.devices().unwrap().is_empty());
+    }
+
+    #[test]
+    fn existing_automation_tables_gain_server_schedule_metadata() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("tddp-client-schema-{unique}.sqlite3"));
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE automations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id TEXT NOT NULL,
+                    trigger_json TEXT NOT NULL,
+                    turn_on INTEGER NOT NULL,
+                    last_solar_day INTEGER
+                );
+                INSERT INTO automations (device_id, trigger_json, turn_on)
+                VALUES ('plug', '{}', 1);",
+            )
+            .unwrap();
+        drop(connection);
+
+        let database = Database::open(&path).unwrap();
+        database
+            .with_connection(|connection| {
+                let metadata: (String, bool) = connection.query_row(
+                    "SELECT name, enabled FROM automations WHERE device_id = 'plug'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?;
+                assert_eq!(metadata, (String::new(), true));
+                Ok(())
+            })
+            .unwrap();
+
+        drop(database);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

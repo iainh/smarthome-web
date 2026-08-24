@@ -139,7 +139,6 @@
     .pane-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
     .pane-header h2 { margin: 0; font-size: 1.3rem; }
     .pane-close { padding: .35rem .7rem; color: var(--subtle-foreground); background: var(--control-surface); font-size: 1.4rem; line-height: 1; }
-    .schedule-panel { display: grid; gap: .8rem; margin-top: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
     .schedule-header, .schedule-summary, .schedule-actions { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
     .schedule-header h3 { margin: 0; font-size: 1rem; }
     .schedule-status { color: var(--muted); font-size: .8rem; }
@@ -176,6 +175,7 @@
     .timer-rule { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .8rem; border-radius: .75rem; background: var(--raised-surface); }
     .timer-rule h3 { margin: 0; font-size: .9rem; }
     .timer-rule p { margin: .2rem 0 0; color: var(--muted); font-size: .78rem; }
+    .schedule-type { display: inline-block; margin-left: .25rem; padding: .12rem .4rem; border-radius: 999px; color: var(--muted); background: var(--detail-surface); font-size: .62rem; font-weight: 700; vertical-align: .08rem; }
     .automation-intro { margin: 0; color: var(--muted); font-size: .85rem; line-height: 1.5; }
     .automation-rules-header { margin-bottom: .75rem; }
     .weather-card { display: grid; gap: .75rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--raised-surface); }
@@ -203,6 +203,38 @@
     .chart-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; padding-left: 2rem; }
     .chart-legend span { display: inline-flex; align-items: center; gap: .3rem; }
     .chart-legend i { width: .75rem; height: 2px; }
+    .light-rule-details[open] { padding: 1rem; }
+    .light-rule-intro { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.45; }
+    .rule-section { display: grid; gap: .65rem; min-width: 0; margin: 0; padding: .8rem 0 0; border: 0; border-top: 1px solid var(--border); }
+    .rule-section legend { padding: 0; color: var(--foreground); font-size: .9rem; font-weight: 800; }
+    .unit-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+    .unit-input input { border-radius: .45rem 0 0 .45rem; }
+    .unit-input > span { display: grid; place-items: center; padding: 0 .55rem; border: 1px solid var(--strong-border); border-left: 0; border-radius: 0 .45rem .45rem 0; color: var(--subtle-foreground); background: var(--control-surface); font-size: .72rem; font-weight: 700; }
+    .threshold-scale { display: grid; grid-template-columns: 1fr 1.35fr 1fr; gap: 2px; overflow: hidden; border-radius: .5rem; color: var(--subtle-foreground); background: var(--border); font-size: .7rem; text-align: center; }
+    .threshold-scale > span { display: grid; gap: .12rem; padding: .45rem .2rem; background: var(--detail-surface); }
+    .threshold-scale .threshold-on { border-top: 3px solid #2563eb; }
+    .threshold-scale .threshold-hold { border-top: 3px solid #64748b; }
+    .threshold-scale .threshold-off { border-top: 3px solid #38bdf8; }
+    .threshold-scale small { color: var(--muted); font-size: .65rem; }
+    .window-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .45rem; }
+    .boundary-card { display: grid; gap: .5rem; min-width: 0; padding: .65rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--raised-surface); }
+    .boundary-card > strong { color: var(--subtle-foreground); font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; }
+    .window-arrow { color: var(--muted); font-size: 1.25rem; }
+    .window-preview { margin: 0; padding: .7rem; border: 1px solid #1d4ed8; border-radius: .55rem; color: #bfdbfe; background: rgb(30 64 175 / 18%); font-size: .76rem; line-height: 1.4; }
+    :root[data-theme="light"] .window-preview { color: #1e3a8a; background: #eff6ff; }
+    .device-pane .advanced-timing { margin: 0; padding: .6rem .7rem; background: var(--raised-surface); }
+    .device-pane .advanced-timing p { margin: .5rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.4; }
+    .outside-window-options { gap: .5rem; }
+    .radio-card { display: flex; grid-template-columns: none; align-items: flex-start; gap: .6rem; padding: .65rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--raised-surface); cursor: pointer; }
+    .radio-card:has(input:checked) { border-color: #2563eb; background: rgb(30 64 175 / 14%); }
+    .radio-card input { width: auto; margin-top: .2rem; accent-color: #2563eb; }
+    .radio-card span { display: grid; gap: .15rem; }
+    .radio-card strong { color: var(--foreground); font-size: .78rem; }
+    .radio-card small { color: var(--muted); font-size: .68rem; line-height: 1.35; }
+    .light-rule-actions { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .5rem; }
+    .light-rule-actions .secondary-button { color: var(--subtle-foreground); background: var(--control-surface); }
+    .plug-migration { display: grid; gap: .65rem; margin-top: 1rem; padding: 1rem; border: 1px solid #92400e; border-radius: .75rem; background: rgb(120 53 15 / 12%); }
+    .migration-button { width: 100%; background: #2563eb; }
     .empty { padding: 3rem 1rem; border: 1px dashed var(--strong-border); border-radius: 1rem; color: var(--muted); text-align: center; }
     .htmx-request .button-label { opacity: .5; }
     @media (max-width: 36rem) {
@@ -211,6 +243,8 @@
       .theme-toggle { grid-column: 1 / -1; }
       .plug-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .device-pane-resizer { display: none; }
+      .window-flow { grid-template-columns: 1fr; }
+      .window-arrow { justify-self: center; transform: rotate(90deg); }
     }
   </style>
 </head>
@@ -310,8 +344,63 @@
         const pane = document.getElementById("device-pane");
         restorePaneWidth(pane);
         pane.showModal();
+        pane.querySelectorAll(".light-rule-form").forEach(updateLightRuleForm);
       }
     });
+
+    function formatFormTime(value) {
+      const parts = value.split(":");
+      if (parts.length !== 2) return value;
+      const hour = Number(parts[0]);
+      const suffix = hour < 12 ? "AM" : "PM";
+      return (hour % 12 || 12) + ":" + parts[1] + " " + suffix;
+    }
+
+    function boundaryDescription(form, boundary) {
+      const card = form.querySelector('[data-boundary="' + boundary + '"]');
+      const kind = card.querySelector(".boundary-kind").value;
+      card.querySelector(".boundary-time-control").hidden = kind !== "fixed";
+      card.querySelector(".boundary-offset-control").hidden = kind === "fixed";
+      if (kind === "fixed") {
+        return formatFormTime(card.querySelector('input[type="time"]').value);
+      }
+      const offset = Number(card.querySelector('input[type="number"]').value);
+      let description = kind;
+      if (offset < 0) description = Math.abs(offset) + " min before " + kind;
+      if (offset > 0) description = offset + " min after " + kind;
+      const today = form.dataset[kind];
+      return today ? description + " (today: " + today + ")" : description;
+    }
+
+    function updateLightRuleForm(form) {
+      const onBelow = form.elements.on_below.value;
+      const offAbove = form.elements.off_above.value;
+      form.querySelectorAll(".on-threshold-output").forEach(function (output) {
+        output.value = onBelow;
+      });
+      form.querySelectorAll(".off-threshold-output").forEach(function (output) {
+        output.value = offAbove;
+      });
+      const start = boundaryDescription(form, "start");
+      const end = boundaryDescription(form, "end");
+      form.querySelector(".window-preview").textContent =
+        "Active daily from " + start + " until " + end + ".";
+    }
+
+    document.body.addEventListener("input", function (event) {
+      const form = event.target.closest(".light-rule-form");
+      if (form) updateLightRuleForm(form);
+    });
+    document.body.addEventListener("change", function (event) {
+      const form = event.target.closest(".light-rule-form");
+      if (form) updateLightRuleForm(form);
+    });
+    document.body.addEventListener("reset", function (event) {
+      if (event.target.matches(".light-rule-form")) {
+        window.setTimeout(function () { updateLightRuleForm(event.target); });
+      }
+    });
+
     document.body.addEventListener("pointerdown", function (event) {
       const resizer = event.target.closest(".device-pane-resizer");
       if (!resizer) return;

@@ -8,10 +8,7 @@
     <button class="pane-close" type="button" aria-label="Close automation pane" onclick="this.closest('dialog').close()">×</button>
   </div>
 
-  <p class="automation-intro">Manage schedules stored on the plug and weather rules evaluated by this server every five minutes.</p>
-
-  {% set schedules = panel.schedules %}
-  {% include "schedule-panel.html" %}
+  <p class="automation-intro">All schedules below are stored and evaluated by this server every five minutes. If several rules apply together, the most recently added rule wins.</p>
 
   <section class="weather-card">
     <div class="weather-header">
@@ -76,27 +73,57 @@
 
   <div class="schedule-header automation-rules-header">
     <div>
-      <h3>Weather rules</h3>
-      <span class="schedule-status">Evaluated by this server</span>
+      <h3>Schedules</h3>
+      <span class="schedule-status">One server-owned schedule list</span>
     </div>
   </div>
 
   {% for rule in panel.rules %}
     <article class="timer-rule">
       <div>
-        <h3>{{ rule.title }}</h3>
+        <h3>{{ rule.name }} <span class="schedule-type">{{ rule.title }}</span></h3>
         <p>{{ rule.description }}</p>
       </div>
-      <button class="small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/automations/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Delete this automation?" hx-disabled-elt="this">Delete</button>
+      <div class="schedule-actions">
+        <form hx-post="/plugs/{{ panel.address }}/automations/{{ rule.id }}/enabled" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+          <button class="small-button" type="submit" name="on" value="{% if rule.enabled %}false{% else %}true{% endif %}">{% if rule.enabled %}Disable{% else %}Enable{% endif %}</button>
+        </form>
+        <button class="small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/automations/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Delete this schedule?" hx-disabled-elt="this">Delete</button>
+      </div>
     </article>
   {% else %}
-    <p class="schedule-status">No custom automations configured.</p>
+    <p class="schedule-status">No server schedules configured.</p>
   {% endfor %}
 
   {% if panel.location_available %}
     <details>
-      <summary>Add sunrise or sunset rule</summary>
+      <summary>Add fixed-time schedule</summary>
+      <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/automations/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <label>Name<input name="name" maxlength="64" required placeholder="Weekday morning"></label>
+        <label>Time<input name="time" type="time" required value="07:00"></label>
+        <label>Action
+          <select name="action">
+            <option value="on">Turn on</option>
+            <option value="off">Turn off</option>
+          </select>
+        </label>
+        <div class="weekdays">
+          <label class="weekday"><input type="checkbox" name="sun">Sun</label>
+          <label class="weekday"><input type="checkbox" name="mon" checked>Mon</label>
+          <label class="weekday"><input type="checkbox" name="tue" checked>Tue</label>
+          <label class="weekday"><input type="checkbox" name="wed" checked>Wed</label>
+          <label class="weekday"><input type="checkbox" name="thu" checked>Thu</label>
+          <label class="weekday"><input type="checkbox" name="fri" checked>Fri</label>
+          <label class="weekday"><input type="checkbox" name="sat">Sat</label>
+        </div>
+        <button class="small-button" type="submit">Add fixed-time schedule</button>
+      </form>
+    </details>
+
+    <details>
+      <summary>Add sunrise or sunset schedule</summary>
       <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/automations/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <label>Name<input name="name" maxlength="64" required placeholder="Evening lights"></label>
         <label>Event
           <select name="event">
             <option value="sunset">Sunset</option>
@@ -113,25 +140,132 @@
             <option value="off">Turn off</option>
           </select>
         </label>
-        <button class="small-button" type="submit">Add solar rule</button>
+        <div class="weekdays">
+          <label class="weekday"><input type="checkbox" name="sun" checked>Sun</label>
+          <label class="weekday"><input type="checkbox" name="mon" checked>Mon</label>
+          <label class="weekday"><input type="checkbox" name="tue" checked>Tue</label>
+          <label class="weekday"><input type="checkbox" name="wed" checked>Wed</label>
+          <label class="weekday"><input type="checkbox" name="thu" checked>Thu</label>
+          <label class="weekday"><input type="checkbox" name="fri" checked>Fri</label>
+          <label class="weekday"><input type="checkbox" name="sat" checked>Sat</label>
+        </div>
+        <button class="small-button" type="submit">Add solar schedule</button>
       </form>
     </details>
 
-    <details>
+    <details class="light-rule-details">
       <summary>Add outdoor-light rule</summary>
-      <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/automations/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
-        <label>Turn on below
-          <input name="on_below" type="number" min="0" max="1499" step="1" required value="75">
-          <span>Shortwave radiation in W/m².</span>
-        </label>
-        <label>Turn off above
-          <input name="off_above" type="number" min="1" max="1500" step="1" required value="125">
-          <span>The gap prevents rapid switching.</span>
-        </label>
-        <button class="small-button" type="submit">Add light rule</button>
+      <form class="schedule-form light-rule-form" hx-post="/plugs/{{ panel.address }}/automations/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
+        <p class="light-rule-intro">Control the plug when daylight drops within a chosen time window.</p>
+        <label>Name<input name="name" maxlength="64" required value="Outdoor light"></label>
+
+        <fieldset class="rule-section">
+          <legend>1. Light thresholds</legend>
+          <div class="form-row">
+            <label>Turn on at or below
+              <span class="unit-input"><input name="on_below" type="number" min="0" max="1499" step="1" required value="100"><span>W/m²</span></span>
+            </label>
+            <label>Turn off at or above
+              <span class="unit-input"><input name="off_above" type="number" min="1" max="1500" step="1" required value="125"><span>W/m²</span></span>
+            </label>
+          </div>
+          <span class="schedule-status">The gap prevents rapid switching.</span>
+          <div class="threshold-scale" aria-label="Below the lower threshold the plug turns on; between thresholds it keeps its current state; above the upper threshold it turns off">
+            <span class="threshold-on">On<small>≤ <output class="on-threshold-output">100</output></small></span>
+            <span class="threshold-hold">Keep current state<small><output class="on-threshold-output">100</output>–<output class="off-threshold-output">125</output></small></span>
+            <span class="threshold-off">Off<small>≥ <output class="off-threshold-output">125</output></small></span>
+          </div>
+        </fieldset>
+
+        <fieldset class="rule-section">
+          <legend>2. Active window</legend>
+          <div class="window-flow">
+            <div class="boundary-card" data-boundary="start">
+              <strong>Start</strong>
+              <label>Boundary
+                <select class="boundary-kind" name="start_kind">
+                  <option value="fixed" selected>Fixed time</option>
+                  <option value="sunrise">Sunrise</option>
+                  <option value="sunset">Sunset</option>
+                </select>
+              </label>
+              <label class="boundary-time-control">Time
+                <input name="start_time" type="time" required value="09:00">
+              </label>
+              <label class="boundary-offset-control" hidden>Offset in minutes
+                <input name="start_offset_minutes" type="number" min="-180" max="180" required value="0">
+              </label>
+            </div>
+            <span class="window-arrow" aria-hidden="true">→</span>
+            <div class="boundary-card" data-boundary="end">
+              <strong>End</strong>
+              <label>Boundary
+                <select class="boundary-kind" name="end_kind">
+                  <option value="fixed">Fixed time</option>
+                  <option value="sunrise">Sunrise</option>
+                  <option value="sunset" selected>Sunset</option>
+                </select>
+              </label>
+              <label class="boundary-time-control" hidden>Time
+                <input name="end_time" type="time" required value="17:00">
+              </label>
+              <label class="boundary-offset-control">Offset in minutes
+                <input name="end_offset_minutes" type="number" min="-180" max="180" required value="0">
+              </label>
+            </div>
+          </div>
+          <p class="window-preview" aria-live="polite">Active daily from <strong>9:00 AM</strong> until <strong>sunset{% if panel.weather %} (today: {{ panel.weather.sunset }}){% endif %}</strong>.</p>
+          <details class="advanced-timing">
+            <summary>Advanced timing</summary>
+            <p>Either boundary can use a fixed time, sunrise, or sunset. Solar offsets may be from 180 minutes before to 180 minutes after the event.</p>
+          </details>
+        </fieldset>
+
+        <fieldset class="rule-section outside-window-options">
+          <legend>3. Outside this window</legend>
+          <label class="radio-card"><input type="radio" name="outside_window" value="turn_off" checked><span><strong>Turn the plug off</strong><small>Prevents a low-light state from leaving it on after the window ends.</small></span></label>
+          <label class="radio-card"><input type="radio" name="outside_window" value="stop_controlling"><span><strong>Stop controlling the plug</strong><small>Leave its current state unchanged.</small></span></label>
+        </fieldset>
+
+        <div class="light-rule-actions">
+          <button class="small-button secondary-button" type="reset">Reset</button>
+          <button class="small-button" type="submit">Add rule</button>
+        </div>
       </form>
     </details>
   {% else %}
-    <p class="advanced-note">Configure this plug's location in the Kasa app before adding weather automations.</p>
+    <p class="advanced-note">Configure this plug's location in the Kasa app before adding server schedules.</p>
+  {% endif %}
+
+  {% if panel.schedules.rules %}
+    <section class="plug-migration">
+      <div class="schedule-header">
+        <div>
+          <h3>Schedules still on the plug</h3>
+          <span class="schedule-status">These run independently and may conflict with server schedules.</span>
+        </div>
+      </div>
+      {% for rule in panel.schedules.rules %}
+        <article class="schedule-rule">
+          <div class="schedule-summary">
+            <div>
+              <h4>{{ rule.name }}</h4>
+              <p class="schedule-meta">{{ rule.time }} · {{ rule.action }} · {{ rule.weekday_summary }}{% if not rule.enabled %} · Disabled{% endif %}</p>
+            </div>
+            <span class="state {% if rule.migratable %}state-on{% else %}state-unavailable{% endif %}">{% if rule.migratable %}Ready{% else %}Advanced{% endif %}</span>
+          </div>
+        </article>
+      {% endfor %}
+      {% if panel.schedules.migratable_count > 0 and panel.location_available %}
+        <form hx-post="/plugs/{{ panel.address }}/automations/migrate" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Import compatible schedules to the server and remove their originals from the plug?" hx-disabled-elt="find button">
+          <button class="small-button migration-button" type="submit">Migrate {{ panel.schedules.migratable_count }} compatible schedule{% if panel.schedules.migratable_count != 1 %}s{% endif %}</button>
+        </form>
+      {% elif panel.schedules.migratable_count > 0 %}
+        <p class="advanced-note">Configure the plug's location before migrating schedules.</p>
+      {% endif %}
+      {% if panel.schedules.unsupported_count > 0 %}
+        <p class="advanced-note">{{ panel.schedules.unsupported_count }} advanced schedule{% if panel.schedules.unsupported_count != 1 %}s are{% else %} is{% endif %} not compatible and will remain on the plug.</p>
+      {% endif %}
+    </section>
   {% endif %}
 </dialog>

@@ -23,16 +23,50 @@ pub enum SolarEvent {
     Sunset,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum AutomationTrigger {
+pub enum TimeBoundary {
+    Fixed {
+        minute_of_day: u16,
+    },
     Solar {
         event: SolarEvent,
         offset_minutes: i16,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutsideWindowBehavior {
+    TurnOff,
+    StopControlling,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveWindow {
+    pub start: TimeBoundary,
+    pub end: TimeBoundary,
+    pub outside: OutsideWindowBehavior,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AutomationTrigger {
+    FixedTime {
+        minute_of_day: u16,
+        weekdays: [bool; 7],
+    },
+    Solar {
+        event: SolarEvent,
+        offset_minutes: i16,
+        #[serde(default = "every_day")]
+        weekdays: [bool; 7],
+    },
     LightLevel {
         on_below: f64,
         off_above: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        active_window: Option<ActiveWindow>,
     },
 }
 
@@ -40,6 +74,10 @@ pub enum AutomationTrigger {
 pub struct AutomationRule {
     pub id: u64,
     pub device_id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default = "enabled_by_default")]
+    pub enabled: bool,
     pub trigger: AutomationTrigger,
     pub turn_on: bool,
     #[serde(default)]
@@ -49,8 +87,18 @@ pub struct AutomationRule {
 #[derive(Debug, Clone)]
 pub struct NewAutomation {
     pub device_id: String,
+    pub name: String,
+    pub enabled: bool,
     pub trigger: AutomationTrigger,
     pub turn_on: bool,
+}
+
+fn every_day() -> [bool; 7] {
+    [true; 7]
+}
+
+fn enabled_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -109,22 +157,28 @@ impl AutomationEngine {
         self.database.with_connection(|connection| {
             load_rules(
                 connection,
-                "SELECT id, device_id, trigger_json, turn_on, last_solar_day
+                "SELECT id, device_id, name, enabled, trigger_json, turn_on, last_solar_day
                  FROM automations WHERE device_id = ?1 ORDER BY id",
                 [device_id],
             )
         })
     }
 
-    pub fn add(&self, automation: NewAutomation) -> Result<()> {
+    pub fn add(&self, automation: NewAutomation) -> Result<u64> {
         let trigger = serde_json::to_string(&automation.trigger)?;
         self.database.with_connection(|connection| {
             connection.execute(
-                "INSERT INTO automations (device_id, trigger_json, turn_on)
-                 VALUES (?1, ?2, ?3)",
-                params![automation.device_id, trigger, automation.turn_on],
+                "INSERT INTO automations (device_id, name, enabled, trigger_json, turn_on)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    automation.device_id,
+                    automation.name,
+                    automation.enabled,
+                    trigger,
+                    automation.turn_on
+                ],
             )?;
-            Ok(())
+            Ok(u64::try_from(connection.last_insert_rowid())?)
         })
     }
 
@@ -136,6 +190,18 @@ impl AutomationEngine {
             Ok(connection.execute(
                 "DELETE FROM automations WHERE id = ?1 AND device_id = ?2",
                 params![id, device_id],
+            )? != 0)
+        })
+    }
+
+    pub fn set_enabled(&self, device_id: &str, id: u64, enabled: bool) -> Result<bool> {
+        let Ok(id) = i64::try_from(id) else {
+            return Ok(false);
+        };
+        self.database.with_connection(|connection| {
+            Ok(connection.execute(
+                "UPDATE automations SET enabled = ?1 WHERE id = ?2 AND device_id = ?3",
+                params![enabled, id, device_id],
             )? != 0)
         })
     }
@@ -189,14 +255,18 @@ impl AutomationEngine {
         })
         .await??;
         self.database.remember_devices(&plugs)?;
-        let mut plugs: HashMap<_, _> = plugs
+        let plugs: HashMap<_, _> = plugs
             .into_iter()
             .map(|plug| (plug.device_id.clone(), plug))
             .collect();
         let mut forecasts = HashMap::new();
-        let mut triggered_solar_rules = Vec::new();
+        let mut triggered_timed_rules = Vec::new();
+        let mut device_evaluations = HashMap::new();
 
         for rule in rules {
+            if !rule.enabled {
+                continue;
+            }
             let Some(plug) = plugs.get(&rule.device_id) else {
                 continue;
             };
@@ -210,30 +280,30 @@ impl AutomationEngine {
             let Some(evaluation) = evaluate_rule(&rule, forecast) else {
                 continue;
             };
-
-            if plug.relay_on != evaluation.turn_on {
-                let control_client = client.clone();
-                let address = plug.address;
-                tokio::task::spawn_blocking(move || {
-                    control_client.set_relay(address, evaluation.turn_on)
-                })
-                .await??;
-                if let Some(plug) = plugs.get_mut(&rule.device_id) {
-                    plug.relay_on = evaluation.turn_on;
-                }
+            if let Some(day) = evaluation.trigger_day {
+                triggered_timed_rules.push((rule.id, day));
             }
-            if let Some(day) = evaluation.solar_day {
-                triggered_solar_rules.push((rule.id, day));
-            }
+            device_evaluations.insert(rule.device_id, evaluation.turn_on);
         }
 
-        if !triggered_solar_rules.is_empty() {
+        for (device_id, turn_on) in device_evaluations {
+            let plug = &plugs[&device_id];
+            if plug.relay_on == turn_on {
+                continue;
+            }
+            let control_client = client.clone();
+            let address = plug.address;
+            tokio::task::spawn_blocking(move || control_client.set_relay(address, turn_on))
+                .await??;
+        }
+
+        if !triggered_timed_rules.is_empty() {
             self.database.with_connection(|connection| {
                 let transaction = connection.transaction()?;
                 {
                     let mut statement = transaction
                         .prepare("UPDATE automations SET last_solar_day = ?1 WHERE id = ?2")?;
-                    for (id, day) in triggered_solar_rules {
+                    for (id, day) in triggered_timed_rules {
                         statement.execute(params![day, id as i64])?;
                     }
                 }
@@ -293,7 +363,7 @@ impl AutomationEngine {
         self.database.with_connection(|connection| {
             load_rules(
                 connection,
-                "SELECT id, device_id, trigger_json, turn_on, last_solar_day
+                "SELECT id, device_id, name, enabled, trigger_json, turn_on, last_solar_day
                  FROM automations ORDER BY id",
                 [],
             )
@@ -314,21 +384,27 @@ fn load_rules(
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, bool>(3)?,
-                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, bool>(5)?,
+                row.get::<_, Option<i64>>(6)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     stored_rules
         .into_iter()
-        .map(|(id, device_id, trigger, turn_on, last_solar_day)| {
-            Ok(AutomationRule {
-                id,
-                device_id,
-                trigger: serde_json::from_str(&trigger)?,
-                turn_on,
-                last_solar_day,
-            })
-        })
+        .map(
+            |(id, device_id, name, enabled, trigger, turn_on, last_solar_day)| {
+                Ok(AutomationRule {
+                    id,
+                    device_id,
+                    name,
+                    enabled,
+                    trigger: serde_json::from_str(&trigger)?,
+                    turn_on,
+                    last_solar_day,
+                })
+            },
+        )
         .collect()
 }
 
@@ -392,7 +468,6 @@ struct HourlyWeather {
 #[derive(Debug, Clone)]
 struct WeatherSnapshot {
     time: i64,
-    day: i64,
     sunrise: i64,
     sunset: i64,
     shortwave_radiation: f64,
@@ -432,7 +507,6 @@ impl WeatherResponse {
 
         Ok(WeatherSnapshot {
             time: self.current.time,
-            day,
             sunrise,
             sunset,
             shortwave_radiation: self.current.shortwave_radiation,
@@ -471,32 +545,54 @@ impl WeatherSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RuleEvaluation {
     turn_on: bool,
-    solar_day: Option<i64>,
+    trigger_day: Option<i64>,
 }
 
 fn evaluate_rule(rule: &AutomationRule, weather: &WeatherSnapshot) -> Option<RuleEvaluation> {
     match rule.trigger {
+        AutomationTrigger::FixedTime {
+            minute_of_day,
+            weekdays,
+        } => {
+            let day = local_day(weather);
+            if rule.last_solar_day == Some(day) || !weekdays[local_weekday(day)] {
+                return None;
+            }
+            let local_seconds = local_seconds(weather);
+            let event_time = weather.time - local_seconds + i64::from(minute_of_day) * 60;
+            timed_rule_evaluation(rule, weather.time, event_time, day)
+        }
         AutomationTrigger::Solar {
             event,
             offset_minutes,
+            weekdays,
         } => {
-            if rule.last_solar_day == Some(weather.day) {
+            let day = local_day(weather);
+            if rule.last_solar_day == Some(day) || !weekdays[local_weekday(day)] {
                 return None;
             }
             let event_time = match event {
                 SolarEvent::Sunrise => weather.sunrise,
                 SolarEvent::Sunset => weather.sunset,
             } + i64::from(offset_minutes) * 60;
-            (weather.time >= event_time && weather.time < event_time + SOLAR_TRIGGER_WINDOW_SECONDS)
-                .then_some(RuleEvaluation {
-                    turn_on: rule.turn_on,
-                    solar_day: Some(weather.day),
-                })
+            timed_rule_evaluation(rule, weather.time, event_time, day)
         }
         AutomationTrigger::LightLevel {
             on_below,
             off_above,
+            active_window,
         } => {
+            if let Some(window) = active_window {
+                if !window_contains(window, weather) {
+                    return match window.outside {
+                        OutsideWindowBehavior::TurnOff => Some(RuleEvaluation {
+                            turn_on: false,
+                            trigger_day: None,
+                        }),
+                        OutsideWindowBehavior::StopControlling => None,
+                    };
+                }
+            }
             let turn_on = if weather.shortwave_radiation <= on_below {
                 true
             } else if weather.shortwave_radiation >= off_above {
@@ -506,9 +602,62 @@ fn evaluate_rule(rule: &AutomationRule, weather: &WeatherSnapshot) -> Option<Rul
             };
             Some(RuleEvaluation {
                 turn_on,
-                solar_day: None,
+                trigger_day: None,
             })
         }
+    }
+}
+
+fn timed_rule_evaluation(
+    rule: &AutomationRule,
+    current_time: i64,
+    event_time: i64,
+    day: i64,
+) -> Option<RuleEvaluation> {
+    (current_time >= event_time && current_time < event_time + SOLAR_TRIGGER_WINDOW_SECONDS)
+        .then_some(RuleEvaluation {
+            turn_on: rule.turn_on,
+            trigger_day: Some(day),
+        })
+}
+
+fn local_seconds(weather: &WeatherSnapshot) -> i64 {
+    (weather.time + i64::from(weather.utc_offset_seconds)).rem_euclid(24 * 60 * 60)
+}
+
+fn local_day(weather: &WeatherSnapshot) -> i64 {
+    (weather.time + i64::from(weather.utc_offset_seconds)).div_euclid(24 * 60 * 60)
+}
+
+fn local_weekday(day: i64) -> usize {
+    (day + 4).rem_euclid(7) as usize
+}
+
+fn window_contains(window: ActiveWindow, weather: &WeatherSnapshot) -> bool {
+    const DAY_SECONDS: i64 = 24 * 60 * 60;
+
+    let current = local_seconds(weather);
+    let boundary_seconds = |boundary| match boundary {
+        TimeBoundary::Fixed { minute_of_day } => i64::from(minute_of_day) * 60,
+        TimeBoundary::Solar {
+            event,
+            offset_minutes,
+        } => {
+            let event_time = match event {
+                SolarEvent::Sunrise => weather.sunrise,
+                SolarEvent::Sunset => weather.sunset,
+            };
+            (event_time + i64::from(weather.utc_offset_seconds) + i64::from(offset_minutes) * 60)
+                .rem_euclid(DAY_SECONDS)
+        }
+    };
+    let start = boundary_seconds(window.start);
+    let end = boundary_seconds(window.end);
+
+    match start.cmp(&end) {
+        std::cmp::Ordering::Less => current >= start && current < end,
+        std::cmp::Ordering::Equal => true,
+        std::cmp::Ordering::Greater => current >= start || current < end,
     }
 }
 
@@ -662,7 +811,6 @@ mod tests {
     fn weather(time: i64, radiation: f64) -> WeatherSnapshot {
         WeatherSnapshot {
             time,
-            day: 1_000,
             sunrise: 2_000,
             sunset: 3_000,
             shortwave_radiation: radiation,
@@ -691,9 +839,12 @@ mod tests {
         let mut rule = AutomationRule {
             id: 1,
             device_id: "plug".to_owned(),
+            name: "Sunset".to_owned(),
+            enabled: true,
             trigger: AutomationTrigger::Solar {
                 event: SolarEvent::Sunset,
                 offset_minutes: -5,
+                weekdays: every_day(),
             },
             turn_on: true,
             last_solar_day: None,
@@ -703,11 +854,39 @@ mod tests {
             evaluate_rule(&rule, &weather(2_700, 0.0)),
             Some(RuleEvaluation {
                 turn_on: true,
-                solar_day: Some(1_000),
+                trigger_day: Some(0),
             })
         );
-        rule.last_solar_day = Some(1_000);
+        rule.last_solar_day = Some(0);
         assert_eq!(evaluate_rule(&rule, &weather(2_700, 0.0)), None);
+    }
+
+    #[test]
+    fn fixed_time_rule_uses_local_weekday_and_fires_once() {
+        let mut rule = AutomationRule {
+            id: 1,
+            device_id: "plug".to_owned(),
+            name: "Morning".to_owned(),
+            enabled: true,
+            trigger: AutomationTrigger::FixedTime {
+                minute_of_day: 9 * 60,
+                weekdays: [false, false, false, false, true, false, false],
+            },
+            turn_on: true,
+            last_solar_day: None,
+        };
+        let mut conditions = weather(13 * 3_600, 0.0);
+        conditions.utc_offset_seconds = -4 * 3_600;
+
+        assert_eq!(
+            evaluate_rule(&rule, &conditions),
+            Some(RuleEvaluation {
+                turn_on: true,
+                trigger_day: Some(0),
+            })
+        );
+        rule.last_solar_day = Some(0);
+        assert_eq!(evaluate_rule(&rule, &conditions), None);
     }
 
     #[test]
@@ -715,9 +894,12 @@ mod tests {
         let rule = AutomationRule {
             id: 1,
             device_id: "plug".to_owned(),
+            name: "Light".to_owned(),
+            enabled: true,
             trigger: AutomationTrigger::LightLevel {
                 on_below: 75.0,
                 off_above: 125.0,
+                active_window: None,
             },
             turn_on: false,
             last_solar_day: None,
@@ -726,6 +908,107 @@ mod tests {
         assert!(evaluate_rule(&rule, &weather(0, 50.0)).unwrap().turn_on);
         assert_eq!(evaluate_rule(&rule, &weather(0, 100.0)), None);
         assert!(!evaluate_rule(&rule, &weather(0, 150.0)).unwrap().turn_on);
+    }
+
+    #[test]
+    fn light_rule_only_controls_within_its_fixed_to_solar_window() {
+        let rule = AutomationRule {
+            id: 1,
+            device_id: "plug".to_owned(),
+            name: "Light".to_owned(),
+            enabled: true,
+            trigger: AutomationTrigger::LightLevel {
+                on_below: 100.0,
+                off_above: 125.0,
+                active_window: Some(ActiveWindow {
+                    start: TimeBoundary::Fixed {
+                        minute_of_day: 9 * 60,
+                    },
+                    end: TimeBoundary::Solar {
+                        event: SolarEvent::Sunset,
+                        offset_minutes: 0,
+                    },
+                    outside: OutsideWindowBehavior::TurnOff,
+                }),
+            },
+            turn_on: true,
+            last_solar_day: None,
+        };
+
+        let mut conditions = weather(13 * 3_600, 50.0);
+        conditions.utc_offset_seconds = -4 * 3_600;
+        conditions.sunrise = 10 * 3_600;
+        conditions.sunset = 23 * 3_600;
+        assert!(evaluate_rule(&rule, &conditions).unwrap().turn_on);
+
+        conditions.time = 23 * 3_600;
+        assert!(!evaluate_rule(&rule, &conditions).unwrap().turn_on);
+
+        conditions.time = 12 * 3_600 + 59 * 60;
+        assert!(!evaluate_rule(&rule, &conditions).unwrap().turn_on);
+    }
+
+    #[test]
+    fn outside_window_can_leave_the_plug_unchanged() {
+        let rule = AutomationRule {
+            id: 1,
+            device_id: "plug".to_owned(),
+            name: "Light".to_owned(),
+            enabled: true,
+            trigger: AutomationTrigger::LightLevel {
+                on_below: 100.0,
+                off_above: 125.0,
+                active_window: Some(ActiveWindow {
+                    start: TimeBoundary::Fixed {
+                        minute_of_day: 9 * 60,
+                    },
+                    end: TimeBoundary::Fixed {
+                        minute_of_day: 17 * 60,
+                    },
+                    outside: OutsideWindowBehavior::StopControlling,
+                }),
+            },
+            turn_on: true,
+            last_solar_day: None,
+        };
+
+        assert_eq!(evaluate_rule(&rule, &weather(8 * 3_600, 50.0)), None);
+    }
+
+    #[test]
+    fn active_window_can_cross_midnight() {
+        let window = ActiveWindow {
+            start: TimeBoundary::Fixed {
+                minute_of_day: 22 * 60,
+            },
+            end: TimeBoundary::Fixed {
+                minute_of_day: 2 * 60,
+            },
+            outside: OutsideWindowBehavior::TurnOff,
+        };
+
+        assert!(window_contains(window, &weather(23 * 3_600, 0.0)));
+        assert!(window_contains(window, &weather(3_600, 0.0)));
+        assert!(!window_contains(window, &weather(12 * 3_600, 0.0)));
+    }
+
+    #[test]
+    fn stored_light_rules_without_a_window_remain_all_day_rules() {
+        let trigger: AutomationTrigger = serde_json::from_value(serde_json::json!({
+            "type": "light_level",
+            "on_below": 75.0,
+            "off_above": 125.0
+        }))
+        .unwrap();
+
+        assert_eq!(
+            trigger,
+            AutomationTrigger::LightLevel {
+                on_below: 75.0,
+                off_above: 125.0,
+                active_window: None,
+            }
+        );
     }
 
     #[test]
@@ -757,7 +1040,6 @@ mod tests {
 
         let snapshot = response.snapshot().unwrap();
         assert_eq!(snapshot.time, 100_000);
-        assert_eq!(snapshot.day, 86_400);
         assert_eq!(snapshot.sunrise, 122_400);
         assert_eq!(snapshot.sunset, 165_600);
         assert_eq!(snapshot.shortwave_radiation, 42.5);
@@ -827,9 +1109,12 @@ mod tests {
         engine
             .add(NewAutomation {
                 device_id: "plug".to_owned(),
+                name: "Evening".to_owned(),
+                enabled: false,
                 trigger: AutomationTrigger::Solar {
                     event: SolarEvent::Sunset,
                     offset_minutes: -30,
+                    weekdays: every_day(),
                 },
                 turn_on: true,
             })
@@ -840,11 +1125,14 @@ mod tests {
         let rules = reloaded.rules_for("plug").unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].id, 1);
+        assert_eq!(rules[0].name, "Evening");
+        assert!(!rules[0].enabled);
         assert_eq!(
             rules[0].trigger,
             AutomationTrigger::Solar {
                 event: SolarEvent::Sunset,
                 offset_minutes: -30,
+                weekdays: every_day(),
             }
         );
 
