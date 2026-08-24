@@ -11,7 +11,7 @@ use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
-use tddp_client::{RuleSet, ScheduleRule, SmartHomeClient, SmartPlug};
+use tddp_client::{CountdownRule, RuleSet, ScheduleRule, SmartHomeClient, SmartPlug};
 use tokio::task;
 
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
@@ -48,6 +48,33 @@ impl From<SmartPlug> for PlugView {
 #[derive(Deserialize)]
 struct RelayForm {
     on: bool,
+}
+
+#[derive(Deserialize)]
+struct CountdownForm {
+    minutes: u64,
+    action: String,
+}
+
+#[derive(Debug)]
+struct CountdownInput {
+    delay_seconds: u64,
+    turn_on: bool,
+}
+
+#[derive(Serialize)]
+struct CountdownPanel {
+    address: String,
+    rules: Vec<CountdownView>,
+}
+
+#[derive(Serialize)]
+struct CountdownView {
+    id: String,
+    name: String,
+    enabled: bool,
+    delay: String,
+    action: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -173,6 +200,14 @@ async fn main() -> Result<(), Box<dyn StdError>> {
         .route("/refresh", post(refresh))
         .route("/plugs/{address}/relay", post(set_relay))
         .route(
+            "/plugs/{address}/countdown",
+            get(get_countdown).post(create_countdown),
+        )
+        .route(
+            "/plugs/{address}/countdown/{id}",
+            axum::routing::delete(delete_countdown),
+        )
+        .route(
             "/plugs/{address}/schedules",
             get(get_schedules).post(create_schedule),
         )
@@ -234,6 +269,43 @@ async fn set_relay(
         .get_template("plug.html")?
         .render(context! { plug })?;
     Ok(Html(fragment))
+}
+
+async fn get_countdown(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<IpAddr>,
+) -> Result<Html<String>, AppError> {
+    let client = state.client.clone();
+    let panel = task::spawn_blocking(move || load_countdown_panel(&client, address)).await??;
+    render_countdown_panel(&state, &panel)
+}
+
+async fn create_countdown(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<IpAddr>,
+    Form(form): Form<CountdownForm>,
+) -> Result<Html<String>, AppError> {
+    let input = CountdownInput::try_from(form)?;
+    let client = state.client.clone();
+    let panel = task::spawn_blocking(move || {
+        client.add_countdown_rule(address, &input.rule())?;
+        load_countdown_panel(&client, address)
+    })
+    .await??;
+    render_countdown_panel(&state, &panel)
+}
+
+async fn delete_countdown(
+    State(state): State<Arc<AppState>>,
+    Path((address, id)): Path<(IpAddr, String)>,
+) -> Result<Html<String>, AppError> {
+    let client = state.client.clone();
+    let panel = task::spawn_blocking(move || {
+        client.delete_countdown_rule(address, &id)?;
+        load_countdown_panel(&client, address)
+    })
+    .await??;
+    render_countdown_panel(&state, &panel)
 }
 
 async fn get_schedules(
@@ -331,6 +403,40 @@ async fn discover(client: SmartHomeClient) -> Result<Vec<PlugView>, AppError> {
     Ok(plugs.into_iter().map(PlugView::from).collect())
 }
 
+impl TryFrom<CountdownForm> for CountdownInput {
+    type Error = AppError;
+
+    fn try_from(form: CountdownForm) -> Result<Self, Self::Error> {
+        if !(1..=1_440).contains(&form.minutes) {
+            return Err(AppError::bad_request(
+                "timer duration must be between 1 minute and 24 hours",
+            ));
+        }
+        let turn_on = match form.action.as_str() {
+            "on" => true,
+            "off" => false,
+            _ => return Err(AppError::bad_request("timer action must be on or off")),
+        };
+        Ok(Self {
+            delay_seconds: form.minutes * 60,
+            turn_on,
+        })
+    }
+}
+
+impl CountdownInput {
+    fn rule(&self) -> CountdownRule {
+        CountdownRule {
+            id: None,
+            name: "Web timer".to_owned(),
+            enabled: true,
+            delay: self.delay_seconds,
+            turn_on: self.turn_on,
+            extra: Default::default(),
+        }
+    }
+}
+
 impl TryFrom<ScheduleForm> for ScheduleInput {
     type Error = AppError;
 
@@ -423,6 +529,33 @@ impl ScheduleInput {
     }
 }
 
+fn load_countdown_panel(
+    client: &SmartHomeClient,
+    address: IpAddr,
+) -> Result<CountdownPanel, AppError> {
+    let rules = client.get_countdown_rules(address)?;
+    Ok(CountdownPanel {
+        address: address.to_string(),
+        rules: rules.rules.into_iter().map(countdown_view).collect(),
+    })
+}
+
+fn countdown_view(rule: CountdownRule) -> CountdownView {
+    let minutes = rule.delay / 60;
+    let seconds = rule.delay % 60;
+    CountdownView {
+        id: rule.id.unwrap_or_default(),
+        name: rule.name,
+        enabled: rule.enabled,
+        delay: if seconds == 0 {
+            format!("{minutes} min")
+        } else {
+            format!("{minutes} min {seconds} sec")
+        },
+        action: if rule.turn_on { "Turn on" } else { "Turn off" },
+    }
+}
+
 fn find_schedule(rules: RuleSet<ScheduleRule>, id: &str) -> Result<ScheduleRule, AppError> {
     rules
         .rules
@@ -508,6 +641,17 @@ fn render_schedule_panel(
     Ok(Html(fragment))
 }
 
+fn render_countdown_panel(
+    state: &AppState,
+    panel: &CountdownPanel,
+) -> Result<Html<String>, AppError> {
+    let fragment = state
+        .templates
+        .get_template("countdown-panel.html")?
+        .render(context! { panel })?;
+    Ok(Html(fragment))
+}
+
 fn templates() -> Result<Environment<'static>, minijinja::Error> {
     let mut templates = Environment::new();
     templates.set_auto_escape_callback(|name| {
@@ -523,6 +667,10 @@ fn templates() -> Result<Environment<'static>, minijinja::Error> {
         include_str!("../templates/plug-list.html"),
     )?;
     templates.add_template("plug.html", include_str!("../templates/plug.html"))?;
+    templates.add_template(
+        "countdown-panel.html",
+        include_str!("../templates/countdown-panel.html"),
+    )?;
     templates.add_template(
         "schedule-panel.html",
         include_str!("../templates/schedule-panel.html"),
@@ -554,10 +702,62 @@ mod tests {
 
         assert!(page.contains("hx-post=\"/refresh\""));
         assert!(page.contains("hx-post=\"/plugs/192.0.2.1/relay\""));
-        assert!(page.contains("hx-target=\"#schedule-pane\""));
-        assert!(page.contains("id=\"schedule-pane\""));
+        assert!(page.contains("hx-get=\"/plugs/192.0.2.1/countdown\""));
+        assert!(page.contains("hx-target=\"#device-pane\""));
+        assert!(page.contains("id=\"device-pane\""));
         assert!(page.contains("&lt;Desk lamp&gt;"));
         assert!(!page.contains("<Desk lamp>"));
+    }
+
+    #[test]
+    fn countdown_form_validates_and_builds_protocol_rule() {
+        let input = CountdownInput::try_from(CountdownForm {
+            minutes: 30,
+            action: "off".to_owned(),
+        })
+        .unwrap();
+        let rule = input.rule();
+
+        assert_eq!(rule.delay, 1_800);
+        assert!(!rule.turn_on);
+        assert!(rule.enabled);
+        assert!(CountdownInput::try_from(CountdownForm {
+            minutes: 0,
+            action: "on".to_owned(),
+        })
+        .is_err());
+        assert!(CountdownInput::try_from(CountdownForm {
+            minutes: 1_441,
+            action: "on".to_owned(),
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn countdown_panel_renders_timer_and_escapes_name() {
+        let panel = CountdownPanel {
+            address: "192.0.2.1".to_owned(),
+            rules: vec![CountdownView {
+                id: "timer-id".to_owned(),
+                name: "<Web timer>".to_owned(),
+                enabled: true,
+                delay: "30 min".to_owned(),
+                action: "Turn off",
+            }],
+        };
+
+        let fragment = templates()
+            .unwrap()
+            .get_template("countdown-panel.html")
+            .unwrap()
+            .render(context! { panel })
+            .unwrap();
+
+        assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/countdown\""));
+        assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/countdown/timer-id\""));
+        assert!(fragment.contains("Turn off in 30 min"));
+        assert!(fragment.contains("&lt;Web timer&gt;"));
+        assert!(!fragment.contains("<Web timer>"));
     }
 
     #[test]
@@ -646,9 +846,9 @@ mod tests {
 
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/schedules/rule-id\""));
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/schedules/rule-id\""));
-        assert!(fragment.contains("id=\"schedule-pane\""));
-        assert!(fragment.contains("class=\"schedule-pane is-open\""));
-        assert!(fragment.contains("hx-target=\"closest .schedule-pane\""));
+        assert!(fragment.contains("id=\"device-pane\""));
+        assert!(fragment.contains("class=\"device-pane is-open\""));
+        assert!(fragment.contains("hx-target=\"closest .device-pane\""));
         assert!(fragment.contains("&lt;Morning&gt;"));
         assert!(!fragment.contains("<Morning>"));
     }

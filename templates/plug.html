@@ -22,7 +22,12 @@
       <button class="toggle" type="submit" name="on" value="true"><span class="button-label">Turn on</span></button>
     {% endif %}
   </form>
-  <button class="schedule-load" type="button" hx-get="/plugs/{{ plug.address }}/schedules" hx-target="#schedule-pane" hx-swap="outerHTML" hx-disabled-elt="this">
-    <span class="button-label">Manage schedules</span>
-  </button>
+  <div class="plug-actions">
+    <button type="button" hx-get="/plugs/{{ plug.address }}/countdown" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+      <span class="button-label">Set timer</span>
+    </button>
+    <button type="button" hx-get="/plugs/{{ plug.address }}/schedules" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+      <span class="button-label">Schedules</span>
+    </button>
+  </div>
 </article>

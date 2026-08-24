@@ -1,10 +1,10 @@
-<aside id="schedule-pane" class="schedule-pane is-open" aria-label="Schedules for {{ panel.address }}">
+<aside id="device-pane" class="device-pane is-open" aria-label="Schedules for {{ panel.address }}">
   <div class="pane-header">
     <div>
       <h2>Manage schedules</h2>
       <span class="schedule-status">{{ panel.address }}</span>
     </div>
-    <button class="pane-close" type="button" aria-label="Close schedule pane" onclick="this.closest('.schedule-pane').classList.remove('is-open')">×</button>
+    <button class="pane-close" type="button" aria-label="Close schedule pane" onclick="this.closest('.device-pane').classList.remove('is-open')">×</button>
   </div>
 <section class="schedule-panel">
   <div class="schedule-header">
@@ -12,7 +12,7 @@
       <h3>Schedules</h3>
       <span class="schedule-status">{% if panel.enabled %}Globally enabled{% else %}Globally disabled{% endif %}</span>
     </div>
-    <form hx-post="/plugs/{{ panel.address }}/schedules/enabled" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <form hx-post="/plugs/{{ panel.address }}/schedules/enabled" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
       {% if panel.enabled %}
         <button class="small-button danger" type="submit" name="on" value="false">Disable all</button>
       {% else %}
@@ -32,16 +32,16 @@
       </div>
       {% if rule.id %}
         <div class="schedule-actions">
-          <form hx-post="/plugs/{{ panel.address }}/schedules/{{ rule.id }}/enabled" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+          <form hx-post="/plugs/{{ panel.address }}/schedules/{{ rule.id }}/enabled" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
             <button class="small-button" type="submit" name="on" value="{% if rule.enabled %}false{% else %}true{% endif %}">{% if rule.enabled %}Disable{% else %}Enable{% endif %}</button>
           </form>
-          <button class="small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/schedules/{{ rule.id }}" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-confirm="Delete this schedule?" hx-disabled-elt="this">Delete</button>
+          <button class="small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/schedules/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Delete this schedule?" hx-disabled-elt="this">Delete</button>
         </div>
       {% endif %}
       {% if rule.editable %}
         <details>
           <summary>Edit fixed-time schedule</summary>
-          <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/schedules/{{ rule.id }}" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+          <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/schedules/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
             <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
             <div class="form-row">
               <label>Hour<input name="hour" type="number" min="0" max="23" required value="{{ rule.hour }}"></label>
@@ -75,7 +75,7 @@
 
   <details>
     <summary>Add weekly schedule</summary>
-    <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/schedules" hx-target="closest .schedule-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/schedules" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
       <label>Name<input name="name" maxlength="64" required placeholder="Weekday morning"></label>
       <div class="form-row">
         <label>Hour<input name="hour" type="number" min="0" max="23" required value="7"></label>

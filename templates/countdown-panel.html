@@ -1,0 +1,39 @@
+<aside id="device-pane" class="device-pane is-open" aria-label="Timer for {{ panel.address }}">
+  <div class="pane-header">
+    <div>
+      <h2>Countdown timer</h2>
+      <span class="schedule-status">{{ panel.address }}</span>
+    </div>
+    <button class="pane-close" type="button" aria-label="Close timer pane" onclick="this.closest('.device-pane').classList.remove('is-open')">×</button>
+  </div>
+
+  {% for rule in panel.rules %}
+    <article class="timer-rule">
+      <div>
+        <h3>{{ rule.name }}</h3>
+        <p>{{ rule.action }} in {{ rule.delay }}{% if not rule.enabled %} · Disabled{% endif %}</p>
+      </div>
+      {% if rule.id %}
+        <button class="small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/countdown/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Cancel this timer?" hx-disabled-elt="this">Cancel</button>
+      {% endif %}
+    </article>
+  {% else %}
+    <p class="schedule-status">No countdown timer is active.</p>
+  {% endfor %}
+
+  <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/countdown" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <label>After
+      <div class="form-row">
+        <input name="minutes" type="number" min="1" max="1440" required value="30">
+        <span>minutes</span>
+      </div>
+    </label>
+    <label>Action
+      <select name="action">
+        <option value="off">Turn off</option>
+        <option value="on">Turn on</option>
+      </select>
+    </label>
+    <button class="small-button" type="submit">Start timer</button>
+  </form>
+</aside>
