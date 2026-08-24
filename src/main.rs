@@ -1,4 +1,5 @@
 mod automation;
+mod group;
 
 use automation::{
     AutomationEngine, AutomationRule, AutomationTrigger, NewAutomation, SolarEvent, WeatherStatus,
@@ -8,8 +9,10 @@ use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
+use group::{DeviceGroup, GroupEngine};
 use minijinja::{context, AutoEscape, Environment};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::error::Error as StdError;
 use std::fmt;
@@ -26,6 +29,7 @@ struct AppState {
     client: SmartHomeClient,
     templates: Environment<'static>,
     automations: Arc<AutomationEngine>,
+    groups: Arc<GroupEngine>,
     device_addresses: Vec<IpAddr>,
 }
 
@@ -56,6 +60,61 @@ impl From<SmartPlug> for PlugView {
 #[derive(Deserialize)]
 struct RelayForm {
     on: bool,
+}
+
+#[derive(Deserialize)]
+struct GroupForm {
+    name: String,
+    #[serde(flatten)]
+    fields: HashMap<String, String>,
+}
+
+impl GroupForm {
+    fn into_parts(self) -> (String, Vec<String>) {
+        let mut members: Vec<_> = self
+            .fields
+            .into_iter()
+            .filter_map(|(name, device_id)| name.starts_with("device_").then_some(device_id))
+            .collect();
+        members.sort_unstable();
+        (self.name, members)
+    }
+}
+
+#[derive(Serialize)]
+struct DeviceListView {
+    groups: Vec<GroupView>,
+    plugs: Vec<PlugView>,
+    notice: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct GroupView {
+    id: u64,
+    name: String,
+    member_count: usize,
+    reachable_count: usize,
+    members: String,
+    state: &'static str,
+    state_class: &'static str,
+    has_offline_members: bool,
+}
+
+#[derive(Serialize)]
+struct GroupPanel {
+    id: Option<u64>,
+    name: String,
+    devices: Vec<GroupDeviceOption>,
+    editing: bool,
+}
+
+#[derive(Serialize)]
+struct GroupDeviceOption {
+    field_name: String,
+    device_id: String,
+    alias: String,
+    available: bool,
+    selected: bool,
 }
 
 #[derive(Deserialize)]
@@ -255,22 +314,34 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     let automation_path = std::env::var_os("AUTOMATIONS_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("automations.json"));
+    let group_path = std::env::var_os("GROUPS_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("groups.json"));
     let device_addresses = match std::env::var("DEVICE_ADDRESSES") {
         Ok(value) => parse_device_addresses(&value)?,
         Err(std::env::VarError::NotPresent) => Vec::new(),
         Err(error) => return Err(error.into()),
     };
     let automations = Arc::new(AutomationEngine::load(automation_path)?);
+    let groups = Arc::new(GroupEngine::load(group_path)?);
     let state = Arc::new(AppState {
         client: SmartHomeClient::new(),
         templates: templates()?,
         automations: automations.clone(),
+        groups,
         device_addresses: device_addresses.clone(),
     });
     tokio::spawn(automations.run(state.client.clone(), device_addresses));
     let app = Router::new()
         .route("/", get(index))
         .route("/refresh", post(refresh))
+        .route("/groups", post(create_group))
+        .route("/groups/new", get(new_group))
+        .route(
+            "/groups/{id}",
+            get(edit_group).post(update_group).delete(delete_group),
+        )
+        .route("/groups/{id}/relay", post(set_group_relay))
         .route("/plugs/{address}/relay", post(set_relay))
         .route("/plugs/{address}/automations", get(get_automations))
         .route(
@@ -322,21 +393,16 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    let plugs = discover(state.client.clone(), state.device_addresses.clone()).await?;
+    let view = load_device_list(&state, None).await?;
     let page = state
         .templates
         .get_template("index.html")?
-        .render(context! { plugs })?;
+        .render(context! { groups => view.groups, plugs => view.plugs, notice => view.notice })?;
     Ok(Html(page))
 }
 
 async fn refresh(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    let plugs = discover(state.client.clone(), state.device_addresses.clone()).await?;
-    let fragment = state
-        .templates
-        .get_template("plug-list.html")?
-        .render(context! { plugs })?;
-    Ok(Html(fragment))
+    render_device_list(&state, load_device_list(&state, None).await?)
 }
 
 async fn set_relay(
@@ -345,17 +411,137 @@ async fn set_relay(
     Form(form): Form<RelayForm>,
 ) -> Result<Html<String>, AppError> {
     let client = state.client.clone();
-    let plug = task::spawn_blocking(move || {
-        client.set_relay(address, form.on)?;
-        client.get_sysinfo(address)
-    })
-    .await??;
-    let plug = PlugView::from(plug);
-    let fragment = state
-        .templates
-        .get_template("plug.html")?
-        .render(context! { plug })?;
-    Ok(Html(fragment))
+    task::spawn_blocking(move || client.set_relay(address, form.on)).await??;
+    render_device_list(&state, load_device_list(&state, None).await?)
+}
+
+async fn new_group(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
+    let plugs = discover_plugs(&state).await?;
+    render_group_panel(&state, group_panel(None, &plugs))
+}
+
+async fn edit_group(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u64>,
+) -> Result<Html<String>, AppError> {
+    let group = find_group(&state, id)?;
+    let plugs = discover_plugs(&state).await?;
+    render_group_panel(&state, group_panel(Some(&group), &plugs))
+}
+
+async fn create_group(
+    State(state): State<Arc<AppState>>,
+    Form(form): Form<GroupForm>,
+) -> Result<Html<String>, AppError> {
+    let (name, device_ids) = form.into_parts();
+    let plugs = discover_plugs(&state).await?;
+    validate_group_members(
+        &device_ids,
+        plugs.iter().map(|plug| plug.device_id.as_str()),
+    )?;
+    state.groups.add(&name, device_ids).map_err(group_error)?;
+    render_device_list(
+        &state,
+        device_list_view(
+            &state,
+            plugs,
+            Some(format!("Created group “{}”.", name.trim())),
+        )?,
+    )
+}
+
+async fn update_group(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u64>,
+    Form(form): Form<GroupForm>,
+) -> Result<Html<String>, AppError> {
+    let existing = find_group(&state, id)?;
+    let (name, device_ids) = form.into_parts();
+    let plugs = discover_plugs(&state).await?;
+    validate_group_members(
+        &device_ids,
+        plugs
+            .iter()
+            .map(|plug| plug.device_id.as_str())
+            .chain(existing.device_ids.iter().map(String::as_str)),
+    )?;
+    if !state
+        .groups
+        .update(id, &name, device_ids)
+        .map_err(group_error)?
+    {
+        return Err(AppError::not_found(format!("group {id} was not found")));
+    }
+    render_device_list(
+        &state,
+        device_list_view(
+            &state,
+            plugs,
+            Some(format!("Updated group “{}”.", name.trim())),
+        )?,
+    )
+}
+
+async fn delete_group(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u64>,
+) -> Result<Html<String>, AppError> {
+    let group = find_group(&state, id)?;
+    if !state.groups.delete(id).map_err(group_error)? {
+        return Err(AppError::not_found(format!("group {id} was not found")));
+    }
+    let view = load_device_list(&state, Some(format!("Deleted group “{}”.", group.name))).await?;
+    render_device_list(&state, view)
+}
+
+async fn set_group_relay(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u64>,
+    Form(form): Form<RelayForm>,
+) -> Result<Html<String>, AppError> {
+    let group = find_group(&state, id)?;
+    let members: HashSet<_> = group.device_ids.iter().map(String::as_str).collect();
+    let mut plugs = discover_plugs(&state).await?;
+    let reachable: Vec<_> = plugs
+        .iter()
+        .filter(|plug| members.contains(plug.device_id.as_str()))
+        .map(|plug| (plug.device_id.clone(), plug.address))
+        .collect();
+    let reachable_count = reachable.len();
+    let mut tasks = tokio::task::JoinSet::new();
+    for (device_id, address) in reachable {
+        let client = state.client.clone();
+        let on = form.on;
+        tasks.spawn_blocking(move || (device_id, client.set_relay(address, on)));
+    }
+
+    let mut controlled = HashSet::new();
+    let mut failed = 0;
+    while let Some(result) = tasks.join_next().await {
+        match result {
+            Ok((device_id, Ok(()))) => {
+                controlled.insert(device_id);
+            }
+            Ok((_, Err(error))) => {
+                failed += 1;
+                eprintln!("group relay operation failed: {error}");
+            }
+            Err(error) => {
+                failed += 1;
+                eprintln!("group relay task failed: {error}");
+            }
+        }
+    }
+    for plug in &mut plugs {
+        if controlled.contains(&plug.device_id) {
+            plug.relay_on = form.on;
+        }
+    }
+
+    let offline = group.device_ids.len().saturating_sub(reachable_count);
+    let unavailable = offline + failed;
+    let notice = group_relay_notice(&group.name, form.on, controlled.len(), unavailable);
+    render_device_list(&state, device_list_view(&state, plugs, Some(notice))?)
 }
 
 async fn get_automations(
@@ -557,15 +743,176 @@ async fn set_schedules_enabled(
     render_schedule_panel(&state, &panel)
 }
 
-async fn discover(
-    client: SmartHomeClient,
-    device_addresses: Vec<IpAddr>,
-) -> Result<Vec<PlugView>, AppError> {
-    let plugs = task::spawn_blocking(move || {
+async fn discover_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
+    let client = state.client.clone();
+    let device_addresses = state.device_addresses.clone();
+    Ok(task::spawn_blocking(move || {
         client.get_inventory_from(&device_addresses, DISCOVERY_TIMEOUT)
     })
-    .await??;
-    Ok(plugs.into_iter().map(PlugView::from).collect())
+    .await??)
+}
+
+async fn load_device_list(
+    state: &AppState,
+    notice: Option<String>,
+) -> Result<DeviceListView, AppError> {
+    let plugs = discover_plugs(state).await?;
+    device_list_view(state, plugs, notice)
+}
+
+fn device_list_view(
+    state: &AppState,
+    plugs: Vec<SmartPlug>,
+    notice: Option<String>,
+) -> Result<DeviceListView, AppError> {
+    let groups = state.groups.groups().map_err(group_error)?;
+    let group_views = groups
+        .into_iter()
+        .map(|group| group_view(group, &plugs))
+        .collect();
+    Ok(DeviceListView {
+        groups: group_views,
+        plugs: plugs.into_iter().map(PlugView::from).collect(),
+        notice,
+    })
+}
+
+fn group_view(group: DeviceGroup, plugs: &[SmartPlug]) -> GroupView {
+    let inventory: HashMap<_, _> = plugs
+        .iter()
+        .map(|plug| (plug.device_id.as_str(), plug))
+        .collect();
+    let reachable: Vec<_> = group
+        .device_ids
+        .iter()
+        .filter_map(|device_id| inventory.get(device_id.as_str()).copied())
+        .collect();
+    let reachable_count = reachable.len();
+    let (state, state_class) = if reachable.is_empty() {
+        ("Unavailable", "state-unavailable")
+    } else if reachable.iter().all(|plug| plug.relay_on) {
+        ("On", "state-on")
+    } else if reachable.iter().all(|plug| !plug.relay_on) {
+        ("Off", "state-off")
+    } else {
+        ("Mixed", "state-mixed")
+    };
+    let members = group
+        .device_ids
+        .iter()
+        .map(|device_id| {
+            inventory
+                .get(device_id.as_str())
+                .map_or_else(|| short_device_id(device_id), |plug| plug.alias.clone())
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    GroupView {
+        id: group.id,
+        name: group.name,
+        member_count: group.device_ids.len(),
+        reachable_count,
+        members,
+        state,
+        state_class,
+        has_offline_members: reachable_count < group.device_ids.len(),
+    }
+}
+
+fn group_panel(group: Option<&DeviceGroup>, plugs: &[SmartPlug]) -> GroupPanel {
+    let selected: HashSet<_> = group
+        .into_iter()
+        .flat_map(|group| group.device_ids.iter().map(String::as_str))
+        .collect();
+    let available: HashSet<_> = plugs.iter().map(|plug| plug.device_id.as_str()).collect();
+    let mut devices: Vec<_> = plugs
+        .iter()
+        .map(|plug| GroupDeviceOption {
+            field_name: String::new(),
+            device_id: plug.device_id.clone(),
+            alias: plug.alias.clone(),
+            available: true,
+            selected: selected.contains(plug.device_id.as_str()),
+        })
+        .collect();
+    if let Some(group) = group {
+        devices.extend(
+            group
+                .device_ids
+                .iter()
+                .filter(|device_id| !available.contains(device_id.as_str()))
+                .map(|device_id| GroupDeviceOption {
+                    field_name: String::new(),
+                    device_id: device_id.clone(),
+                    alias: short_device_id(device_id),
+                    available: false,
+                    selected: true,
+                }),
+        );
+    }
+    for (index, device) in devices.iter_mut().enumerate() {
+        device.field_name = format!("device_{index}");
+    }
+    GroupPanel {
+        id: group.map(|group| group.id),
+        name: group.map_or_else(String::new, |group| group.name.clone()),
+        devices,
+        editing: group.is_some(),
+    }
+}
+
+fn validate_group_members<'a>(
+    device_ids: &[String],
+    allowed: impl IntoIterator<Item = &'a str>,
+) -> Result<(), AppError> {
+    let allowed: HashSet<_> = allowed.into_iter().collect();
+    if let Some(device_id) = device_ids
+        .iter()
+        .find(|device_id| !allowed.contains(device_id.as_str()))
+    {
+        return Err(AppError::bad_request(format!(
+            "device {device_id} is not available for this group"
+        )));
+    }
+    Ok(())
+}
+
+fn find_group(state: &AppState, id: u64) -> Result<DeviceGroup, AppError> {
+    state
+        .groups
+        .get(id)
+        .map_err(group_error)?
+        .ok_or_else(|| AppError::not_found(format!("group {id} was not found")))
+}
+
+fn group_relay_notice(name: &str, on: bool, controlled: usize, unavailable: usize) -> String {
+    if controlled == 0 {
+        return format!("No members of “{name}” could be controlled.");
+    }
+    let action = if on { "Turned on" } else { "Turned off" };
+    let noun = if controlled == 1 { "device" } else { "devices" };
+    let mut notice = format!("{action} {controlled} {noun} in “{name}”.");
+    if unavailable > 0 {
+        let noun = if unavailable == 1 {
+            "member was"
+        } else {
+            "members were"
+        };
+        notice.push_str(&format!(" {unavailable} {noun} unavailable."));
+    }
+    notice
+}
+
+fn short_device_id(device_id: &str) -> String {
+    let suffix: String = device_id
+        .chars()
+        .rev()
+        .take(8)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    format!("Unavailable …{suffix}")
 }
 
 fn parse_device_addresses(value: &str) -> Result<Vec<IpAddr>, std::net::AddrParseError> {
@@ -656,6 +1003,17 @@ fn require_location(plug: &SmartPlug) -> Result<(), AppError> {
 
 fn automation_error(error: Box<dyn StdError + Send + Sync>) -> AppError {
     AppError::internal(error.to_string())
+}
+
+fn group_error(error: Box<dyn StdError + Send + Sync>) -> AppError {
+    if error
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|error| error.kind() == std::io::ErrorKind::InvalidInput)
+    {
+        AppError::bad_request(error.to_string())
+    } else {
+        AppError::internal(error.to_string())
+    }
 }
 
 impl TryFrom<CountdownForm> for CountdownInput {
@@ -1073,6 +1431,22 @@ fn render_schedule_panel(
     Ok(Html(fragment))
 }
 
+fn render_device_list(state: &AppState, view: DeviceListView) -> Result<Html<String>, AppError> {
+    let fragment = state
+        .templates
+        .get_template("plug-list.html")?
+        .render(context! { groups => view.groups, plugs => view.plugs, notice => view.notice })?;
+    Ok(Html(fragment))
+}
+
+fn render_group_panel(state: &AppState, panel: GroupPanel) -> Result<Html<String>, AppError> {
+    let fragment = state
+        .templates
+        .get_template("group-panel.html")?
+        .render(context! { panel })?;
+    Ok(Html(fragment))
+}
+
 fn render_countdown_panel(
     state: &AppState,
     panel: &CountdownPanel,
@@ -1110,6 +1484,11 @@ fn templates() -> Result<Environment<'static>, minijinja::Error> {
         include_str!("../templates/plug-list.html"),
     )?;
     templates.add_template("plug.html", include_str!("../templates/plug.html"))?;
+    templates.add_template("group.html", include_str!("../templates/group.html"))?;
+    templates.add_template(
+        "group-panel.html",
+        include_str!("../templates/group-panel.html"),
+    )?;
     templates.add_template(
         "automation-panel.html",
         include_str!("../templates/automation-panel.html"),
@@ -1130,6 +1509,19 @@ mod tests {
     use super::*;
     use crate::automation::{LightHistory, LightPoint};
 
+    fn smart_plug(device_id: &str, alias: &str, relay_on: bool) -> SmartPlug {
+        SmartPlug {
+            address: "192.0.2.1".parse().unwrap(),
+            model: "HS105(US)".to_owned(),
+            alias: alias.to_owned(),
+            device_id: device_id.to_owned(),
+            software_version: "1.5.6".to_owned(),
+            relay_on,
+            latitude: None,
+            longitude: None,
+        }
+    }
+
     #[test]
     fn configured_device_addresses_are_trimmed_sorted_and_deduplicated() {
         assert_eq!(
@@ -1140,6 +1532,100 @@ mod tests {
             ]
         );
         assert!(parse_device_addresses("192.0.2.1,not-an-address").is_err());
+    }
+
+    #[test]
+    fn group_views_report_mixed_and_unavailable_members() {
+        let plugs = vec![
+            smart_plug("plug-on", "Lamp", true),
+            smart_plug("plug-off", "Fan", false),
+        ];
+        let mixed = group_view(
+            DeviceGroup {
+                id: 1,
+                name: "Room".to_owned(),
+                device_ids: vec![
+                    "plug-on".to_owned(),
+                    "plug-off".to_owned(),
+                    "plug-offline-12345678".to_owned(),
+                ],
+            },
+            &plugs,
+        );
+        assert_eq!(mixed.state, "Mixed");
+        assert_eq!(mixed.reachable_count, 2);
+        assert_eq!(mixed.member_count, 3);
+        assert!(mixed.has_offline_members);
+        assert_eq!(mixed.members, "Lamp, Fan, Unavailable …12345678");
+
+        let unavailable = group_view(
+            DeviceGroup {
+                id: 2,
+                name: "Away".to_owned(),
+                device_ids: vec!["missing".to_owned()],
+            },
+            &plugs,
+        );
+        assert_eq!(unavailable.state, "Unavailable");
+        assert_eq!(unavailable.state_class, "state-unavailable");
+        assert_eq!(unavailable.reachable_count, 0);
+    }
+
+    #[test]
+    fn group_panel_preserves_unavailable_members_for_explicit_removal() {
+        let group = DeviceGroup {
+            id: 7,
+            name: "Downstairs".to_owned(),
+            device_ids: vec!["online".to_owned(), "offline-12345678".to_owned()],
+        };
+        let panel = group_panel(Some(&group), &[smart_plug("online", "Desk lamp", true)]);
+
+        assert!(panel.editing);
+        assert_eq!(panel.devices.len(), 2);
+        assert!(panel.devices[0].available);
+        assert!(panel.devices[0].selected);
+        assert!(!panel.devices[1].available);
+        assert!(panel.devices[1].selected);
+
+        let fragment = templates()
+            .unwrap()
+            .get_template("group-panel.html")
+            .unwrap()
+            .render(context! { panel })
+            .unwrap();
+        assert!(fragment.contains("hx-post=\"/groups/7\""));
+        assert!(fragment.contains("hx-delete=\"/groups/7\""));
+        assert!(fragment.contains("value=\"offline-12345678\" checked"));
+        assert!(fragment.contains("Unavailable …12345678"));
+    }
+
+    #[test]
+    fn group_card_renders_controls_and_escapes_group_data() {
+        let groups = vec![GroupView {
+            id: 3,
+            name: "<Downstairs>".to_owned(),
+            member_count: 2,
+            reachable_count: 1,
+            members: "Lamp & fan".to_owned(),
+            state: "On",
+            state_class: "state-on",
+            has_offline_members: true,
+        }];
+
+        let fragment = templates()
+            .unwrap()
+            .get_template("plug-list.html")
+            .unwrap()
+            .render(context! { groups, plugs => Vec::<PlugView>::new() })
+            .unwrap();
+
+        assert!(fragment.contains("hx-post=\"/groups/3/relay\""));
+        assert!(fragment.contains("name=\"on\" value=\"true\""));
+        assert!(fragment.contains("name=\"on\" value=\"false\""));
+        assert!(fragment.contains("hx-get=\"/groups/3\""));
+        assert!(fragment.contains("&lt;Downstairs&gt;"));
+        assert!(fragment.contains("Lamp &amp; fan"));
+        assert!(fragment.contains("Some members are unavailable"));
     }
 
     #[test]
@@ -1161,7 +1647,9 @@ mod tests {
             .unwrap();
 
         assert!(page.contains("hx-post=\"/refresh\""));
+        assert!(page.contains("hx-get=\"/groups/new\""));
         assert!(page.contains("hx-post=\"/plugs/192.0.2.1/relay\""));
+        assert!(page.contains("hx-target=\"#plug-list\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/automations\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/countdown\""));
         assert!(!page.contains("hx-get=\"/plugs/192.0.2.1/schedules\""));

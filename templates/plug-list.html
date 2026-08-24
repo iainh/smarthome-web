@@ -1,9 +1,25 @@
-<section id="plug-list" class="plug-grid" aria-live="polite">
-  {% if plugs %}
-    {% for plug in plugs %}
-      {% include "plug.html" %}
-    {% endfor %}
-  {% else %}
-    <div class="empty">No compatible smart plugs responded.</div>
+<section id="plug-list" class="device-list" aria-live="polite">
+  {% if notice %}<p class="operation-notice">{{ notice }}</p>{% endif %}
+  {% if groups %}
+    <section class="device-section" aria-labelledby="groups-heading">
+      <h2 id="groups-heading" class="section-heading">Groups</h2>
+      <div class="plug-grid">
+        {% for group in groups %}
+          {% include "group.html" %}
+        {% endfor %}
+      </div>
+    </section>
   {% endif %}
+  <section class="device-section" aria-labelledby="devices-heading">
+    <h2 id="devices-heading" class="section-heading">Devices</h2>
+    <div class="plug-grid">
+      {% if plugs %}
+        {% for plug in plugs %}
+          {% include "plug.html" %}
+        {% endfor %}
+      {% else %}
+        <div class="empty">No compatible smart plugs responded.</div>
+      {% endif %}
+    </div>
+  </section>
 </section>

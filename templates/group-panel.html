@@ -1,0 +1,34 @@
+<dialog id="device-pane" class="device-pane" aria-label="{% if panel.editing %}Edit {{ panel.name }}{% else %}Create group{% endif %}">
+  <div class="pane-header">
+    <div>
+      <h2>{% if panel.editing %}Edit group{% else %}Create group{% endif %}</h2>
+      <span class="schedule-status">Local device group</span>
+    </div>
+    <button class="pane-close" type="button" aria-label="Close group pane" onclick="this.closest('dialog').close()">×</button>
+  </div>
+
+  <form class="schedule-form" hx-post="{% if panel.editing %}/groups/{{ panel.id }}{% else %}/groups{% endif %}" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button" hx-on::after-request="if(event.detail.successful) this.closest('dialog').close()">
+    <label>Group name
+      <input name="name" maxlength="64" required value="{{ panel.name }}" placeholder="Living room">
+    </label>
+    <fieldset class="group-membership">
+      <legend>Devices</legend>
+      {% for device in panel.devices %}
+        <label class="group-device {% if not device.available %}group-device-offline{% endif %}">
+          <input type="checkbox" name="{{ device.field_name }}" value="{{ device.device_id }}" {% if device.selected %}checked{% endif %}>
+          <span>
+            <strong>{{ device.alias }}</strong>
+            <small>{% if device.available %}Available{% else %}Unavailable{% endif %}</small>
+          </span>
+        </label>
+      {% else %}
+        <p class="schedule-status">No compatible smart plugs responded.</p>
+      {% endfor %}
+    </fieldset>
+    <button class="small-button" type="submit">{% if panel.editing %}Save group{% else %}Create group{% endif %}</button>
+  </form>
+
+  {% if panel.editing %}
+    <button class="small-button danger group-delete" type="button" hx-delete="/groups/{{ panel.id }}" hx-target="#plug-list" hx-swap="outerHTML" hx-confirm="Delete this group? Devices will not be removed." hx-disabled-elt="this" hx-on::after-request="if(event.detail.successful) this.closest('dialog').close()">Delete group</button>
+  {% endif %}
+</dialog>

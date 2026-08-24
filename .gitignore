@@ -1,4 +1,5 @@
 /target
 automations.json
+groups.json
 **/*.rs.bk
 .idea/**
