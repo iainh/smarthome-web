@@ -1,4 +1,5 @@
 <dialog id="device-pane" class="device-pane" aria-label="{% if panel.editing %}Edit {{ panel.name }}{% else %}Create group{% endif %}">
+  <div class="device-pane-resizer" role="separator" aria-label="Resize group pane" aria-orientation="vertical" tabindex="0"></div>
   <div class="pane-header">
     <div>
       <h2>{% if panel.editing %}Edit group{% else %}Create group{% endif %}</h2>

@@ -1597,6 +1597,8 @@ mod tests {
         assert!(fragment.contains("hx-delete=\"/groups/7\""));
         assert!(fragment.contains("value=\"offline-12345678\" checked"));
         assert!(fragment.contains("Unavailable …12345678"));
+        assert!(fragment.contains("role=\"separator\""));
+        assert!(fragment.contains("aria-label=\"Resize group pane\""));
     }
 
     #[test]
