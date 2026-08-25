@@ -4,7 +4,7 @@ mod group;
 
 use automation::{
     ActiveWindow, AutomationEngine, AutomationRule, AutomationTrigger, NewAutomation,
-    OutsideWindowBehavior, SolarEvent, TimeBoundary, WeatherStatus,
+    OutsideWindowBehavior, SolarEvent, SolarForecastDay, TimeBoundary, WeatherStatus,
 };
 use axum::body::Body;
 use axum::extract::{Form, Path, State};
@@ -16,7 +16,7 @@ use database::Database;
 use group::{DeviceGroup, GroupEngine};
 use minijinja::{context, AutoEscape, Environment};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::error::Error as StdError;
 use std::fmt;
@@ -159,8 +159,37 @@ struct AutomationPanel {
     address: String,
     location_available: bool,
     weather: Option<WeatherStatus>,
+    calendar: Option<WeekCalendarView>,
     rules: Vec<AutomationView>,
     schedules: SchedulePanel,
+}
+
+#[derive(Serialize)]
+struct WeekCalendarView {
+    timezone: String,
+    has_entries: bool,
+    days: Vec<CalendarDayView>,
+}
+
+#[derive(Serialize)]
+struct CalendarDayView {
+    name: &'static str,
+    is_today: bool,
+    lane_count: usize,
+    entries: Vec<CalendarEntryView>,
+}
+
+#[derive(Serialize)]
+struct CalendarEntryView {
+    rule_id: u64,
+    name: String,
+    label: String,
+    detail: String,
+    class: String,
+    left: f64,
+    width: f64,
+    lane: usize,
+    point: bool,
 }
 
 #[derive(Serialize)]
@@ -1414,13 +1443,339 @@ async fn load_automation_panel(
             }
         }
     };
+    let calendar = weather
+        .as_ref()
+        .map(|weather| week_calendar_view(&rules, weather));
     Ok(AutomationPanel {
         address: plug.address.to_string(),
         location_available,
         weather,
+        calendar,
         rules: rules.into_iter().map(automation_view).collect(),
         schedules,
     })
+}
+
+fn week_calendar_view(rules: &[AutomationRule], weather: &WeatherStatus) -> WeekCalendarView {
+    const DAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    let current_weekday = weekday_index(weather.current_day);
+    let monday = weather.current_day - ((current_weekday + 6) % 7) as i64;
+    let solar_days: HashMap<_, _> = weather
+        .solar_days
+        .iter()
+        .map(|day| (day.day, *day))
+        .collect();
+    let mut days: Vec<_> = DAY_NAMES
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(day_offset, name)| {
+            let day = monday + day_offset as i64;
+            CalendarDayView {
+                name,
+                is_today: day == weather.current_day,
+                lane_count: 1,
+                entries: Vec::new(),
+            }
+        })
+        .collect();
+
+    let timed_events = enabled_timed_events(rules, monday, &solar_days);
+    push_scheduled_on_spans(&mut days, monday, &timed_events);
+
+    for (day_offset, day_view) in days.iter_mut().enumerate() {
+        let day = monday + day_offset as i64;
+        let solar = solar_days.get(&day).copied();
+        for rule in rules {
+            if let Some((minute, kind)) = calendar_timed_event(rule, day, solar) {
+                push_calendar_point(&mut day_view.entries, rule, minute, kind, 0);
+            }
+        }
+        let mut lane_count = usize::from(!day_view.entries.is_empty());
+        for rule in rules {
+            let AutomationTrigger::LightLevel { active_window, .. } = rule.trigger else {
+                continue;
+            };
+            let Some((start, end)) = calendar_window(active_window, solar) else {
+                continue;
+            };
+            let entry_count = day_view.entries.len();
+            if start < end {
+                push_calendar_window(&mut day_view.entries, rule, start, end, lane_count);
+            } else if start > end {
+                push_calendar_window(&mut day_view.entries, rule, start, 24 * 60, lane_count);
+                push_calendar_window(&mut day_view.entries, rule, 0, end, lane_count);
+            }
+            if day_view.entries.len() > entry_count {
+                lane_count += 1;
+            }
+        }
+        day_view.lane_count = lane_count.max(1);
+    }
+    let has_entries = days.iter().any(|day| !day.entries.is_empty());
+    WeekCalendarView {
+        timezone: weather.timezone.clone(),
+        has_entries,
+        days,
+    }
+}
+
+struct TimedCalendarEvent<'a> {
+    rule: &'a AutomationRule,
+}
+
+fn enabled_timed_events<'a>(
+    rules: &'a [AutomationRule],
+    monday: i64,
+    solar_days: &HashMap<i64, SolarForecastDay>,
+) -> BTreeMap<i64, TimedCalendarEvent<'a>> {
+    let mut events: BTreeMap<i64, TimedCalendarEvent<'a>> = BTreeMap::new();
+    for day in monday - 7..monday + 7 {
+        let solar = solar_days.get(&day).copied();
+        for rule in rules.iter().filter(|rule| rule.enabled) {
+            let Some((minute, _)) = calendar_timed_event(rule, day, solar) else {
+                continue;
+            };
+            let at = day * 24 * 60 + i64::from(minute);
+            let replace = events
+                .get(&at)
+                .is_none_or(|existing| rule.id > existing.rule.id);
+            if replace {
+                events.insert(at, TimedCalendarEvent { rule });
+            }
+        }
+    }
+    events
+}
+
+fn calendar_timed_event(
+    rule: &AutomationRule,
+    day: i64,
+    solar: Option<SolarForecastDay>,
+) -> Option<(u16, &'static str)> {
+    let weekday = weekday_index(day);
+    match rule.trigger {
+        AutomationTrigger::FixedTime {
+            minute_of_day,
+            weekdays,
+        } if weekdays[weekday] => Some((minute_of_day, "fixed")),
+        AutomationTrigger::Solar {
+            event,
+            offset_minutes,
+            weekdays,
+        } if weekdays[weekday] => {
+            Some((solar_event_minute(event, offset_minutes, solar?), "solar"))
+        }
+        _ => None,
+    }
+}
+
+fn push_scheduled_on_spans(
+    days: &mut [CalendarDayView],
+    monday: i64,
+    events: &BTreeMap<i64, TimedCalendarEvent<'_>>,
+) {
+    let week_start = monday * 24 * 60;
+    let week_end = (monday + 7) * 24 * 60;
+    let mut on_start = None;
+    for (&at, event) in events.range(..week_end) {
+        if event.rule.turn_on {
+            on_start.get_or_insert((at, event.rule));
+        } else if let Some((start, start_rule)) = on_start.take() {
+            push_scheduled_on_span(days, monday, start.max(week_start), at, start_rule);
+        }
+    }
+    if let Some((start, start_rule)) = on_start {
+        push_scheduled_on_span(days, monday, start.max(week_start), week_end, start_rule);
+    }
+}
+
+fn push_scheduled_on_span(
+    days: &mut [CalendarDayView],
+    monday: i64,
+    start: i64,
+    end: i64,
+    start_rule: &AutomationRule,
+) {
+    let week_start = monday * 24 * 60;
+    let week_end = (monday + 7) * 24 * 60;
+    let mut segment_start = start.clamp(week_start, week_end);
+    let end = end.clamp(week_start, week_end);
+    if segment_start >= end {
+        return;
+    }
+    let detail = format!(
+        "Scheduled {}–{} · started by {}",
+        calendar_absolute_time(start),
+        calendar_absolute_time(end),
+        start_rule.name
+    );
+    while segment_start < end {
+        let day = segment_start.div_euclid(24 * 60);
+        let segment_end = end.min((day + 1) * 24 * 60);
+        let start_minute = segment_start.rem_euclid(24 * 60) as u16;
+        let end_minute = if segment_end == (day + 1) * 24 * 60 {
+            24 * 60
+        } else {
+            segment_end.rem_euclid(24 * 60) as u16
+        };
+        let day_index = (day - monday) as usize;
+        days[day_index].entries.push(CalendarEntryView {
+            rule_id: start_rule.id,
+            name: "Lights on".to_owned(),
+            label: "ON".to_owned(),
+            detail: detail.clone(),
+            class: "calendar-entry scheduled-on".to_owned(),
+            left: calendar_percent(start_minute),
+            width: calendar_percent(end_minute - start_minute),
+            lane: 0,
+            point: false,
+        });
+        segment_start = segment_end;
+    }
+}
+
+fn calendar_absolute_time(timestamp: i64) -> String {
+    let minute = timestamp.rem_euclid(24 * 60) as u16;
+    automation::format_clock_time(minute / 60, minute % 60)
+}
+
+fn weekday_index(day: i64) -> usize {
+    (day + 4).rem_euclid(7) as usize
+}
+
+fn push_calendar_point(
+    entries: &mut Vec<CalendarEntryView>,
+    rule: &AutomationRule,
+    minute: u16,
+    kind: &str,
+    lane: usize,
+) {
+    let action = if rule.turn_on { "Turn on" } else { "Turn off" };
+    entries.push(CalendarEntryView {
+        rule_id: rule.id,
+        name: rule.name.clone(),
+        label: calendar_boundary_label(rule, minute),
+        detail: format!(
+            "{} · {action}",
+            automation::format_clock_time(minute / 60, minute % 60)
+        ),
+        class: calendar_entry_class(
+            kind,
+            if rule.turn_on { "turn-on" } else { "turn-off" },
+            rule.enabled,
+        ),
+        left: calendar_percent(minute),
+        width: 0.0,
+        lane,
+        point: true,
+    });
+}
+
+fn push_calendar_window(
+    entries: &mut Vec<CalendarEntryView>,
+    rule: &AutomationRule,
+    start: u16,
+    end: u16,
+    lane: usize,
+) {
+    let detail = if start == 0 && end == 24 * 60 {
+        "Active all day".to_owned()
+    } else {
+        format!(
+            "Active {}–{}",
+            automation::format_clock_time(start / 60, start % 60),
+            if end == 24 * 60 {
+                "12:00 AM".to_owned()
+            } else {
+                automation::format_clock_time(end / 60, end % 60)
+            }
+        )
+    };
+    let (label, detail) = match rule.trigger {
+        AutomationTrigger::LightLevel {
+            on_below,
+            off_above,
+            ..
+        } => (
+            format!("AUTO · ≤ {on_below:.0} W/m²"),
+            format!("{detail} · turns off at ≥ {off_above:.0} W/m²"),
+        ),
+        _ => (rule.name.clone(), detail),
+    };
+    entries.push(CalendarEntryView {
+        rule_id: rule.id,
+        name: rule.name.clone(),
+        label,
+        detail,
+        class: calendar_entry_class("light-window", "", rule.enabled),
+        left: calendar_percent(start),
+        width: calendar_percent(end - start),
+        lane,
+        point: false,
+    });
+}
+
+fn calendar_boundary_label(rule: &AutomationRule, minute: u16) -> String {
+    let hour = minute / 60;
+    let time = format!("{}:{:02}", (hour % 12).max(1), minute % 60);
+    match rule.trigger {
+        AutomationTrigger::FixedTime { .. } => time,
+        AutomationTrigger::Solar {
+            event: SolarEvent::Sunrise,
+            ..
+        } => format!("{time} ↑"),
+        AutomationTrigger::Solar {
+            event: SolarEvent::Sunset,
+            ..
+        } => format!("{time} ↓"),
+        AutomationTrigger::LightLevel { .. } => time,
+    }
+}
+
+fn calendar_window(
+    window: Option<ActiveWindow>,
+    solar: Option<SolarForecastDay>,
+) -> Option<(u16, u16)> {
+    match window {
+        None => Some((0, 24 * 60)),
+        Some(window) => Some((
+            calendar_boundary_minute(window.start, solar)?,
+            calendar_boundary_minute(window.end, solar)?,
+        )),
+    }
+}
+
+fn calendar_boundary_minute(
+    boundary: TimeBoundary,
+    solar: Option<SolarForecastDay>,
+) -> Option<u16> {
+    match boundary {
+        TimeBoundary::Fixed { minute_of_day } => Some(minute_of_day),
+        TimeBoundary::Solar {
+            event,
+            offset_minutes,
+        } => Some(solar_event_minute(event, offset_minutes, solar?)),
+    }
+}
+
+fn solar_event_minute(event: SolarEvent, offset_minutes: i16, solar: SolarForecastDay) -> u16 {
+    let minute = match event {
+        SolarEvent::Sunrise => solar.sunrise_minute,
+        SolarEvent::Sunset => solar.sunset_minute,
+    };
+    (i32::from(minute) + i32::from(offset_minutes)).rem_euclid(24 * 60) as u16
+}
+
+fn calendar_entry_class(kind: &str, action: &str, enabled: bool) -> String {
+    format!(
+        "calendar-entry {kind} {action}{}",
+        if enabled { "" } else { " calendar-disabled" }
+    )
+}
+
+fn calendar_percent(minute: u16) -> f64 {
+    (f64::from(minute) * 10000.0 / f64::from(24 * 60)).round() / 100.0
 }
 
 fn automation_view(rule: AutomationRule) -> AutomationView {
@@ -2129,100 +2484,148 @@ mod tests {
 
     #[test]
     fn automation_panel_renders_persisted_rules_and_actions() {
+        let weather = WeatherStatus {
+            local_time: "8:15 PM".to_owned(),
+            timezone: "GMT-4".to_owned(),
+            condition: "Overcast",
+            is_day: false,
+            shortwave_radiation: 42.5,
+            cloud_cover: 100,
+            temperature: 13.4,
+            apparent_temperature: 11.9,
+            precipitation: 0.0,
+            sunrise: "6:33 AM".to_owned(),
+            sunset: "8:19 PM".to_owned(),
+            previous_day_light: Some(LightHistory {
+                points: vec![
+                    LightPoint {
+                        x: 40.0,
+                        y: 120.0,
+                        time: "12:00 AM".to_owned(),
+                        radiation: 0.0,
+                    },
+                    LightPoint {
+                        x: 176.0,
+                        y: 12.0,
+                        time: "12:00 PM".to_owned(),
+                        radiation: 500.0,
+                    },
+                ],
+                average_points: vec![LightPoint {
+                    x: 176.0,
+                    y: 33.6,
+                    time: "12:00 PM".to_owned(),
+                    radiation: 400.0,
+                }],
+                average_days: 30,
+                max_radiation: 500,
+                mid_radiation: 250,
+                sunrise_x: 114.8,
+                sunset_x: 270.1,
+                sunrise: "6:36 AM".to_owned(),
+                sunset: "8:18 PM".to_owned(),
+            }),
+            current_day: 0,
+            solar_days: (-10..=3)
+                .map(|day| SolarForecastDay {
+                    day,
+                    sunrise_minute: 6 * 60 + 30,
+                    sunset_minute: 20 * 60 + 20,
+                })
+                .collect(),
+        };
+        let rules = vec![
+            AutomationRule {
+                id: 7,
+                device_id: "plug".to_owned(),
+                name: "Evening".to_owned(),
+                enabled: true,
+                trigger: AutomationTrigger::Solar {
+                    event: SolarEvent::Sunset,
+                    offset_minutes: -30,
+                    weekdays: [true; 7],
+                },
+                turn_on: true,
+                last_solar_day: None,
+            },
+            AutomationRule {
+                id: 8,
+                device_id: "plug".to_owned(),
+                name: "Morning".to_owned(),
+                enabled: true,
+                trigger: AutomationTrigger::FixedTime {
+                    minute_of_day: 7 * 60 + 30,
+                    weekdays: [false, true, true, true, true, true, false],
+                },
+                turn_on: false,
+                last_solar_day: None,
+            },
+            AutomationRule {
+                id: 9,
+                device_id: "plug".to_owned(),
+                name: "Cloudy daytime".to_owned(),
+                enabled: true,
+                trigger: AutomationTrigger::LightLevel {
+                    on_below: 80.0,
+                    off_above: 120.0,
+                    active_window: Some(ActiveWindow {
+                        start: TimeBoundary::Fixed {
+                            minute_of_day: 9 * 60,
+                        },
+                        end: TimeBoundary::Solar {
+                            event: SolarEvent::Sunset,
+                            offset_minutes: -10,
+                        },
+                        outside: OutsideWindowBehavior::StopControlling,
+                    }),
+                },
+                turn_on: true,
+                last_solar_day: None,
+            },
+        ];
+        let calendar = week_calendar_view(&rules, &weather);
+        assert_eq!(calendar.days.len(), 7);
+        assert!(calendar.days[3].is_today);
+        assert_eq!(
+            calendar.days[0]
+                .entries
+                .iter()
+                .filter(|entry| entry.point)
+                .map(|entry| entry.rule_id)
+                .collect::<Vec<_>>(),
+            vec![7, 8]
+        );
+        assert_eq!(
+            calendar.days[5]
+                .entries
+                .iter()
+                .filter(|entry| entry.point)
+                .map(|entry| entry.rule_id)
+                .collect::<Vec<_>>(),
+            vec![7]
+        );
+        let monday_on_spans: Vec<_> = calendar.days[0]
+            .entries
+            .iter()
+            .filter(|entry| entry.class.contains("scheduled-on"))
+            .collect();
+        assert_eq!(monday_on_spans.len(), 2);
+        assert_eq!(monday_on_spans[0].left, 0.0);
+        assert_eq!(monday_on_spans[0].width, 31.25);
+        assert_eq!(
+            monday_on_spans[1].detail,
+            "Scheduled 7:50 PM–7:30 AM · started by Evening"
+        );
+        assert!(calendar.days[0]
+            .entries
+            .iter()
+            .any(|entry| entry.label == "AUTO · ≤ 80 W/m²"));
         let panel = AutomationPanel {
             address: "192.0.2.1".to_owned(),
             location_available: true,
-            weather: Some(WeatherStatus {
-                local_time: "8:15 PM".to_owned(),
-                timezone: "GMT-4".to_owned(),
-                condition: "Overcast",
-                is_day: false,
-                shortwave_radiation: 42.5,
-                cloud_cover: 100,
-                temperature: 13.4,
-                apparent_temperature: 11.9,
-                precipitation: 0.0,
-                sunrise: "6:33 AM".to_owned(),
-                sunset: "8:19 PM".to_owned(),
-                previous_day_light: Some(LightHistory {
-                    points: vec![
-                        LightPoint {
-                            x: 40.0,
-                            y: 120.0,
-                            time: "12:00 AM".to_owned(),
-                            radiation: 0.0,
-                        },
-                        LightPoint {
-                            x: 176.0,
-                            y: 12.0,
-                            time: "12:00 PM".to_owned(),
-                            radiation: 500.0,
-                        },
-                    ],
-                    average_points: vec![LightPoint {
-                        x: 176.0,
-                        y: 33.6,
-                        time: "12:00 PM".to_owned(),
-                        radiation: 400.0,
-                    }],
-                    average_days: 30,
-                    max_radiation: 500,
-                    mid_radiation: 250,
-                    sunrise_x: 114.8,
-                    sunset_x: 270.1,
-                    sunrise: "6:36 AM".to_owned(),
-                    sunset: "8:18 PM".to_owned(),
-                }),
-            }),
-            rules: vec![
-                automation_view(AutomationRule {
-                    id: 7,
-                    device_id: "plug".to_owned(),
-                    name: "Evening".to_owned(),
-                    enabled: true,
-                    trigger: AutomationTrigger::Solar {
-                        event: SolarEvent::Sunset,
-                        offset_minutes: -30,
-                        weekdays: [true; 7],
-                    },
-                    turn_on: true,
-                    last_solar_day: None,
-                }),
-                automation_view(AutomationRule {
-                    id: 8,
-                    device_id: "plug".to_owned(),
-                    name: "Morning".to_owned(),
-                    enabled: true,
-                    trigger: AutomationTrigger::FixedTime {
-                        minute_of_day: 7 * 60 + 30,
-                        weekdays: [false, true, true, true, true, true, false],
-                    },
-                    turn_on: false,
-                    last_solar_day: None,
-                }),
-                automation_view(AutomationRule {
-                    id: 9,
-                    device_id: "plug".to_owned(),
-                    name: "Cloudy daytime".to_owned(),
-                    enabled: true,
-                    trigger: AutomationTrigger::LightLevel {
-                        on_below: 80.0,
-                        off_above: 120.0,
-                        active_window: Some(ActiveWindow {
-                            start: TimeBoundary::Fixed {
-                                minute_of_day: 9 * 60,
-                            },
-                            end: TimeBoundary::Solar {
-                                event: SolarEvent::Sunset,
-                                offset_minutes: -10,
-                            },
-                            outside: OutsideWindowBehavior::StopControlling,
-                        }),
-                    },
-                    turn_on: true,
-                    last_solar_day: None,
-                }),
-            ],
+            calendar: Some(calendar),
+            weather: Some(weather),
+            rules: rules.into_iter().map(automation_view).collect(),
             schedules: SchedulePanel {
                 migratable_count: 1,
                 unsupported_count: 0,
@@ -2248,6 +2651,21 @@ mod tests {
         assert!(fragment.contains("class=\"solar-line sunrise-line\" x1=\"114.8\""));
         assert!(fragment.contains("Sunrise 6:36 AM"));
         assert!(fragment.contains("Sunset 8:18 PM"));
+        assert!(fragment.contains("id=\"week-calendar-title\">This week"));
+        assert!(fragment.contains("Times shown in GMT-4"));
+        assert!(fragment.contains("data-calendar-view=\"state\""));
+        assert!(fragment.contains("State view"));
+        assert!(fragment.contains("Rule events"));
+        assert!(fragment.contains("class=\"calendar-off-label\">OFF"));
+        assert!(fragment.contains("onclick=\"openScheduleEditor(7)\""));
+        assert!(fragment.contains("id=\"schedule-editor-7\""));
+        assert!(fragment.contains("Evening — 7:50 PM · Turn on"));
+        assert!(fragment.contains("calendar-entry scheduled-on calendar-span"));
+        assert!(fragment.contains("Lights on — Scheduled 7:50 PM–7:30 AM"));
+        assert!(fragment.contains("Scheduled on</span>"));
+        assert!(fragment.contains("7:50 ↓"));
+        assert!(fragment.contains("AUTO"));
+        assert!(fragment.contains("Cloudy daytime — Active 9:00 AM–8:10 PM"));
         assert!(fragment.contains("One server-owned schedule list"));
         assert!(fragment.contains("Evening <span class=\"schedule-type\">Sunset</span>"));
         assert!(fragment.contains("Control the plug when daylight drops"));

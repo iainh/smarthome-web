@@ -115,6 +115,15 @@ pub struct WeatherStatus {
     pub sunrise: String,
     pub sunset: String,
     pub previous_day_light: Option<LightHistory>,
+    pub current_day: i64,
+    pub solar_days: Vec<SolarForecastDay>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SolarForecastDay {
+    pub day: i64,
+    pub sunrise_minute: u16,
+    pub sunset_minute: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -235,7 +244,7 @@ impl AutomationEngine {
             )) as Box<dyn Error + Send + Sync>
         })?;
         Ok(self
-            .fetch_weather(coordinate, LIGHT_AVERAGE_DAYS)
+            .fetch_weather(coordinate, LIGHT_AVERAGE_DAYS, 7)
             .await?
             .status())
     }
@@ -295,7 +304,7 @@ impl AutomationEngine {
                 continue;
             };
             if let std::collections::hash_map::Entry::Vacant(entry) = forecasts.entry(key) {
-                entry.insert(self.fetch_weather(key, 1).await?);
+                entry.insert(self.fetch_weather(key, 1, 1).await?);
             }
             let forecast = &forecasts[&key];
             let Some(evaluation) = evaluate_rule(&rule, forecast) else {
@@ -339,6 +348,7 @@ impl AutomationEngine {
         &self,
         coordinate: Coordinate,
         past_days: u8,
+        forecast_days: u8,
     ) -> Result<WeatherSnapshot> {
         let response = self
             .weather
@@ -356,9 +366,8 @@ impl AutomationEngine {
                 ("hourly", "shortwave_radiation"),
                 ("timezone", "auto"),
                 ("timeformat", "unixtime"),
-                ("forecast_days", "1"),
             ])
-            .query(&[("past_days", past_days)])
+            .query(&[("past_days", past_days), ("forecast_days", forecast_days)])
             .send()
             .await?
             .error_for_status()?
@@ -501,6 +510,7 @@ struct WeatherSnapshot {
     cloud_cover: u8,
     is_day: bool,
     previous_day_light: Option<LightHistory>,
+    solar_days: Vec<SolarForecastDay>,
 }
 
 impl WeatherResponse {
@@ -525,6 +535,18 @@ impl WeatherResponse {
                 day_index,
             )
         });
+        let solar_days = self
+            .daily
+            .time
+            .iter()
+            .zip(&self.daily.sunrise)
+            .zip(&self.daily.sunset)
+            .map(|((day, sunrise), sunset)| SolarForecastDay {
+                day: (*day + i64::from(self.utc_offset_seconds)).div_euclid(24 * 60 * 60),
+                sunrise_minute: local_minute(*sunrise, self.utc_offset_seconds),
+                sunset_minute: local_minute(*sunset, self.utc_offset_seconds),
+            })
+            .collect();
 
         Ok(WeatherSnapshot {
             time: self.current.time,
@@ -540,6 +562,7 @@ impl WeatherResponse {
             cloud_cover: self.current.cloud_cover,
             is_day: self.current.is_day != 0,
             previous_day_light,
+            solar_days,
         })
     }
 }
@@ -559,8 +582,14 @@ impl WeatherSnapshot {
             sunrise: local_time(self.sunrise, self.utc_offset_seconds),
             sunset: local_time(self.sunset, self.utc_offset_seconds),
             previous_day_light: self.previous_day_light.clone(),
+            current_day: local_day(self),
+            solar_days: self.solar_days.clone(),
         }
     }
+}
+
+fn local_minute(timestamp: i64, utc_offset_seconds: i32) -> u16 {
+    ((timestamp + i64::from(utc_offset_seconds)).rem_euclid(24 * 60 * 60) / 60) as u16
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -844,6 +873,7 @@ mod tests {
             cloud_cover: 0,
             is_day: true,
             previous_day_light: None,
+            solar_days: Vec::new(),
         }
     }
 
@@ -1064,6 +1094,21 @@ mod tests {
         assert_eq!(snapshot.sunrise, 122_400);
         assert_eq!(snapshot.sunset, 165_600);
         assert_eq!(snapshot.shortwave_radiation, 42.5);
+        assert_eq!(
+            snapshot.solar_days,
+            vec![
+                SolarForecastDay {
+                    day: -1,
+                    sunrise_minute: 6 * 60,
+                    sunset_minute: 18 * 60,
+                },
+                SolarForecastDay {
+                    day: 0,
+                    sunrise_minute: 6 * 60,
+                    sunset_minute: 18 * 60,
+                },
+            ]
+        );
         let history = snapshot.previous_day_light.as_ref().unwrap();
         assert_eq!(history.points.len(), 6);
         assert_eq!(history.max_radiation, 500);

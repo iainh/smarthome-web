@@ -71,6 +71,51 @@
     {% endif %}
   </section>
 
+  {% if panel.calendar %}
+    <section class="week-calendar" data-calendar-view="state" aria-labelledby="week-calendar-title">
+      <div class="week-calendar-header">
+        <div>
+          <h3 id="week-calendar-title">This week</h3>
+          <span class="schedule-status">Times shown in {{ panel.calendar.timezone }}</span>
+        </div>
+        <div class="calendar-view-toggle" role="group" aria-label="Calendar view">
+          <button class="calendar-view-button active" type="button" data-view="state" aria-pressed="true" onclick="setCalendarView(this, 'state')">State view</button>
+          <button class="calendar-view-button" type="button" data-view="events" aria-pressed="false" onclick="setCalendarView(this, 'events')">Rule events</button>
+        </div>
+      </div>
+      <p class="calendar-help">Select a span or boundary to edit its rule.</p>
+      <div class="calendar-axis" aria-hidden="true">
+        <span>12 AM</span><span>6 AM</span><span>Noon</span><span>6 PM</span><span>12 AM</span>
+      </div>
+      <div class="calendar-days">
+        {% for day in panel.calendar.days %}
+          <div class="calendar-day{% if day.is_today %} calendar-today{% endif %}">
+            <div class="calendar-day-label">{{ day.name }}{% if day.is_today %}<span>Today</span>{% endif %}</div>
+            <div class="calendar-track" style="--calendar-lanes: {{ day.lane_count }}">
+              <span class="calendar-off-label">OFF</span>
+              {% for entry in day.entries %}
+                <button class="{{ entry.class }}{% if entry.point %} calendar-point{% else %} calendar-span{% endif %}" type="button" style="--calendar-left: {{ entry.left }}%; --calendar-width: {{ entry.width }}%; --calendar-lane: {{ entry.lane }}" onclick="openScheduleEditor({{ entry.rule_id }})" title="{{ entry.name }} — {{ entry.detail }}" aria-label="{{ entry.name }}: {{ entry.detail }}. Edit schedule">
+                  <span>{{ entry.label }}</span>
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% if not panel.calendar.has_entries %}
+        <p class="schedule-status">No schedule entries this week.</p>
+      {% endif %}
+      <div class="calendar-legend" aria-label="Calendar legend">
+        <span><i class="calendar-scheduled-key"></i>Scheduled on</span>
+        <span><i class="calendar-on-key"></i>On event</span>
+        <span><i class="calendar-off-key"></i>Off event</span>
+        <span>↑ Sunrise</span>
+        <span>↓ Sunset</span>
+        <span><i class="calendar-window-key"></i>Outdoor-light window</span>
+      </div>
+    </section>
+  {% endif %}
+
   <div class="schedule-header automation-rules-header">
     <div>
       <h3>Schedules</h3>
@@ -93,7 +138,7 @@
         </div>
       </div>
 
-      <details class="schedule-editor">
+      <details class="schedule-editor" id="schedule-editor-{{ rule.id }}">
         <summary>Edit schedule</summary>
         {% if rule.kind == "fixed" %}
           <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/automations/{{ rule.id }}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
