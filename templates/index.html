@@ -666,6 +666,18 @@
     }
 
     document.body.addEventListener("click", function (event) {
+      const pane = event.target.closest(".device-pane");
+      if (pane && event.target === pane) {
+        const bounds = pane.getBoundingClientRect();
+        const outside = event.clientX < bounds.left
+          || event.clientX > bounds.right
+          || event.clientY < bounds.top
+          || event.clientY > bounds.bottom;
+        if (outside) {
+          pane.close();
+          return;
+        }
+      }
       const entry = event.target.closest("[data-calendar-entry]");
       if (entry) selectCalendarEntry(entry);
     });
