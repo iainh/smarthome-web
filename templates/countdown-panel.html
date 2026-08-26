@@ -4,24 +4,26 @@
       <h2>Countdown timer</h2>
       <span class="schedule-status">{{ panel.address }}</span>
     </div>
-    <button class="pane-close" type="button" aria-label="Close timer pane" onclick="this.closest('dialog').close()">×</button>
+    <button class="ui basic icon button pane-close" type="button" aria-label="Close timer pane" onclick="this.closest('dialog').close()"><i class="close icon" aria-hidden="true"></i></button>
   </div>
 
   {% for rule in panel.rules %}
-    <article class="timer-rule">
-      <div>
-        <h3>{{ rule.name }}</h3>
-        <p>{{ rule.action }} in {{ rule.delay }}{% if not rule.enabled %} · Disabled{% endif %}</p>
+    <article class="ui fluid card timer-rule">
+      <div class="content">
+        <h3 class="header">{{ rule.name }}</h3>
+        <p class="description">{{ rule.action }} in {{ rule.delay }}{% if not rule.enabled %} · Disabled{% endif %}</p>
       </div>
       {% if rule.id %}
-        <button class="small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/countdown/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Cancel this timer?" hx-disabled-elt="this">Cancel</button>
+        <div class="extra content">
+          <button class="ui fluid negative button small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/countdown/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Cancel this timer?" hx-disabled-elt="this"><i class="stop circle outline icon" aria-hidden="true"></i>Cancel timer</button>
+        </div>
       {% endif %}
     </article>
   {% else %}
     <p class="schedule-status">No countdown timer is active.</p>
   {% endfor %}
 
-  <form class="schedule-form" hx-post="/plugs/{{ panel.address }}/countdown" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+  <form class="ui form schedule-form" hx-post="/plugs/{{ panel.address }}/countdown" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
     <label>After
       <div class="form-row">
         <input name="minutes" type="number" min="1" max="1440" required value="30">
@@ -34,6 +36,6 @@
         <option value="on">Turn on</option>
       </select>
     </label>
-    <button class="small-button" type="submit">Start timer</button>
+    <button class="ui primary button small-button" type="submit"><i class="clock outline icon" aria-hidden="true"></i>Start timer</button>
   </form>
 </dialog>

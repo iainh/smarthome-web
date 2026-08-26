@@ -19,6 +19,9 @@
   <link rel="icon" href="/assets/icons/icon-16.png" sizes="16x16" type="image/png">
   <link rel="shortcut icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/assets/icons/icon-180.png" sizes="180x180">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <script>
     try {
@@ -84,8 +87,9 @@
       --warning: #92400e;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, var(--background-gradient), var(--background) 45%); }
-    main { width: min(72rem, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0; }
+    [hidden] { display: none !important; }
+    body { margin: 0; min-height: 100vh; color: var(--foreground); background: radial-gradient(circle at top, var(--background-gradient), var(--background) 45%); }
+    .ui.container.app-container { padding: 3rem 0; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
     .header-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
     h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 3rem); letter-spacing: -0.04em; }
@@ -100,13 +104,11 @@
     .device-list { gap: 2rem; }
     .section-heading { margin: 0; font-size: 1.1rem; }
     .plug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; }
-    .plug-card { display: grid; gap: 1rem; padding: 1.25rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--surface); box-shadow: 0 1rem 2rem var(--shadow); }
-    .plug-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
     .plug-heading-actions { display: flex; align-items: center; gap: .45rem; }
     .remove-device { display: grid; place-items: center; padding: .35rem; border: 1px solid var(--border); border-radius: .5rem; color: var(--muted); background: transparent; }
     .remove-device:hover { color: #ef4444; background: var(--raised-surface); }
     .remove-device svg { display: block; }
-    .plug-heading h2, .plug-heading h3 { margin: 0; font-size: 1.15rem; }
+    .plug-card .header { margin: 0; font-size: 1.15rem; }
     .model { margin: .2rem 0 0; color: var(--muted); font-size: .85rem; }
     .state { border-radius: 999px; padding: .25rem .6rem; font-size: .75rem; font-weight: 800; text-transform: uppercase; }
     .state-on { color: #052e16; background: #86efac; }
@@ -142,7 +144,6 @@
     .schedule-header, .schedule-summary, .schedule-actions { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
     .schedule-header h3 { margin: 0; font-size: 1rem; }
     .schedule-status { color: var(--muted); font-size: .8rem; }
-    .schedule-rule { display: grid; gap: .6rem; padding: .8rem; border-radius: .75rem; background: var(--raised-surface); }
     .schedule-rule h4 { margin: 0; font-size: .9rem; }
     .schedule-meta { margin: .15rem 0 0; color: var(--muted); font-size: .78rem; }
     .small-button { padding: .45rem .65rem; color: #fff; background: var(--secondary-control); }
@@ -172,8 +173,6 @@
     .weekday:has(input:focus-visible) { outline: 2px solid #7dd3fc; outline-offset: 2px; }
     .weekday input { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
     .advanced-note { margin: 0; color: var(--warning); font-size: .75rem; }
-    .timer-rule { display: grid; gap: .65rem; padding: .8rem; border-radius: .75rem; background: var(--raised-surface); }
-    .timer-rule-summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
     .timer-rule h3 { margin: 0; font-size: .9rem; }
     .timer-rule p { margin: .2rem 0 0; color: var(--muted); font-size: .78rem; }
     .schedule-editor { margin: 0; padding: .6rem .7rem; background: var(--detail-surface); }
@@ -181,10 +180,20 @@
     .schedule-editor > .schedule-form { margin-top: .7rem; }
     .window-toggle { display: flex; grid-template-columns: none; align-items: center; gap: .5rem; color: var(--subtle-foreground); }
     .window-toggle input { width: auto; accent-color: #2563eb; }
-    .schedule-type { display: inline-block; margin-left: .25rem; padding: .12rem .4rem; border-radius: 999px; color: var(--muted); background: var(--detail-surface); font-size: .62rem; font-weight: 700; vertical-align: .08rem; }
     .automation-intro { margin: 0; color: var(--muted); font-size: .85rem; line-height: 1.5; }
-    .automation-rules-header { margin-bottom: .75rem; }
-    .weather-card { display: grid; gap: .75rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--raised-surface); }
+    .schedule-add-control { display: grid; gap: .65rem; margin-top: .75rem; }
+    .schedule-add-control > .ui.dropdown { justify-self: start; margin: 0; }
+    .schedule-add-control > .ui.dropdown .menu { width: min(22rem, calc(100vw - 2.5rem)); border-color: var(--strong-border); background: var(--detail-surface); box-shadow: 0 .75rem 2rem var(--pane-shadow); }
+    .schedule-add-control > .ui.dropdown .menu > .item { display: flex; align-items: center; gap: .5rem; color: var(--foreground); }
+    .schedule-add-control > .ui.dropdown .menu > .item:hover,
+    .schedule-add-control > .ui.dropdown .menu > .selected.item { color: var(--foreground); background: var(--raised-surface); }
+    .schedule-add-control > .ui.dropdown .menu > .item > span { display: grid; gap: .12rem; }
+    .schedule-add-control > .ui.dropdown .menu > .item small { color: var(--muted); font-size: .68rem; font-weight: 500; }
+    .schedule-add-forms { display: contents; }
+    .schedule-add-form:not([open]) { display: none; }
+    .device-pane .schedule-add-form { margin: 0; padding: .85rem; }
+    .schedule-add-form > summary { display: none; }
+    .schedule-add-title { margin: 0; font-size: .9rem; }
     .weather-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
     .weather-header h3 { margin: 0; font-size: 1rem; }
     .weather-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
@@ -194,10 +203,15 @@
     .week-calendar { display: grid; gap: .65rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); }
     .week-calendar-header { display: flex; align-items: start; justify-content: space-between; gap: .75rem; }
     .week-calendar-header h3 { margin: 0 0 .15rem; font-size: 1rem; }
+    .week-calendar-header h3 span { color: var(--muted); font-weight: 600; }
     .calendar-view-toggle { display: grid; grid-template-columns: repeat(2, auto); padding: .15rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--raised-surface); }
     .calendar-view-button { padding: .35rem .5rem; border-radius: .38rem; color: var(--muted); background: transparent; font-size: .65rem; white-space: nowrap; }
     .calendar-view-button.active { color: #2563eb; background: var(--surface); box-shadow: 0 1px 3px var(--shadow); }
+    .calendar-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .65rem; margin: 0; padding: .55rem .65rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--raised-surface); font-size: .72rem; }
+    .calendar-summary strong { color: var(--foreground); }
+    .calendar-summary span { color: var(--muted); }
     .calendar-help { margin: 0; color: var(--muted); font-size: .7rem; }
+    .calendar-day-picker { display: none; }
     .calendar-axis { display: grid; grid-template-columns: repeat(5, 1fr); margin-left: 3.4rem; color: var(--muted); font-size: .58rem; }
     .calendar-axis span { transform: translateX(-50%); }
     .calendar-axis span:first-child { transform: none; }
@@ -206,37 +220,59 @@
     .calendar-day { display: grid; grid-template-columns: 2.9rem minmax(0, 1fr); align-items: stretch; gap: .5rem; padding: .2rem; border-radius: .4rem; }
     .calendar-today { background: rgb(37 99 235 / 10%); }
     .calendar-day-label { display: flex; flex-direction: column; justify-content: center; color: var(--subtle-foreground); font-size: .7rem; font-weight: 800; }
+    .calendar-day-label small { color: var(--muted); font-size: .52rem; font-weight: 600; }
     .calendar-day-label span { color: #60a5fa; font-size: .52rem; font-weight: 700; text-transform: uppercase; }
     .calendar-track { --calendar-lane-step: 2.05rem; position: relative; min-height: calc(.35rem + var(--calendar-lanes) * var(--calendar-lane-step)); overflow: visible; border: 1px solid var(--border); border-radius: .4rem; background-color: var(--raised-surface); background-image: linear-gradient(to right, transparent calc(25% - 1px), var(--border) calc(25% - 1px), var(--border) 25%, transparent 25%, transparent calc(50% - 1px), var(--border) calc(50% - 1px), var(--border) 50%, transparent 50%, transparent calc(75% - 1px), var(--border) calc(75% - 1px), var(--border) 75%, transparent 75%); }
-    .calendar-off-label { position: absolute; top: .35rem; left: .45rem; z-index: 0; color: var(--muted); font-size: .55rem; font-weight: 700; }
+    .calendar-now { position: absolute; z-index: 4; top: -.2rem; bottom: -.2rem; left: var(--calendar-left); width: 1px; border-left: 1px solid #38bdf8; pointer-events: none; }
+    .calendar-now i { position: absolute; right: 0; bottom: -.8rem; padding: .05rem .15rem; color: #38bdf8; background: var(--raised-surface); font-size: .46rem; font-style: normal; font-weight: 800; line-height: 1; transform: translateX(50%); }
     .calendar-entry { position: absolute; top: calc(.25rem + var(--calendar-lane) * var(--calendar-lane-step)); left: var(--calendar-left); z-index: 1; height: 1rem; min-width: 3px; margin: 0; padding: 0; border: 0; border-radius: .3rem; cursor: pointer; }
     .calendar-entry:hover { z-index: 2; filter: brightness(1.2); }
     .calendar-entry:focus-visible { z-index: 3; outline: 2px solid #7dd3fc; outline-offset: 2px; }
+    .calendar-entry[aria-pressed="true"] { z-index: 3; outline: 2px solid #f8fafc; outline-offset: 2px; box-shadow: 0 0 0 4px #2563eb; }
     .calendar-entry > span { display: block; overflow: hidden; padding: 0 .25rem; font-size: .58rem; font-weight: 800; line-height: 1rem; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
     .calendar-point { z-index: 2; width: .7rem; min-width: .7rem; border-radius: 50%; transform: translateX(-50%); }
     .calendar-point > span { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
     .calendar-point.solar { border-radius: .12rem; transform: translateX(-50%) rotate(45deg); }
     .calendar-span { width: max(var(--calendar-width), 3px); color: #e0f2fe; background: #0369a1; }
     .calendar-span.scheduled-on { z-index: 0; color: #dcfce7; background: #15803d; }
+    .calendar-span.scheduled-off { z-index: 0; border: 1px solid var(--strong-border); color: var(--muted); background: rgb(100 116 139 / 12%); }
     .calendar-span.light-window { border: 1px solid #60a5fa; color: #dbeafe; background-color: #0c4a6e; background-image: repeating-linear-gradient(135deg, transparent 0, transparent 3px, rgb(147 197 253 / 25%) 3px, rgb(147 197 253 / 25%) 5px); }
     :root[data-theme="light"] .calendar-span.light-window { color: #1d4ed8; background-color: #eff6ff; }
     .calendar-entry.turn-on { background: #16a34a; }
     .calendar-entry.turn-off { background: #dc2626; }
     .calendar-disabled { opacity: .35; filter: grayscale(.45); }
     .week-calendar[data-calendar-view="state"] .calendar-disabled { display: none; }
+    .week-calendar[data-calendar-view="state"] .calendar-conflict:not(.calendar-conflict-winner) { display: none; }
     .week-calendar[data-calendar-view="state"] .calendar-point { width: 2px; min-width: 2px; height: 1.05rem; border-radius: 0; transform: translateX(-1px); }
     .week-calendar[data-calendar-view="state"] .calendar-point.solar { transform: translateX(-1px); }
     .week-calendar[data-calendar-view="state"] .calendar-point > span { position: absolute; top: 1.08rem; left: 50%; width: max-content; height: auto; margin: 0; overflow: visible; padding: .08rem .15rem; border-radius: .2rem; clip-path: none; color: var(--muted); background: var(--raised-surface); font-size: .48rem; font-weight: 700; line-height: 1; transform: translateX(-50%); }
     .week-calendar[data-calendar-view="events"] .calendar-track { --calendar-lane-step: 1.15rem; overflow: hidden; }
     .week-calendar[data-calendar-view="events"] .calendar-days { gap: .3rem; }
-    .week-calendar[data-calendar-view="events"] .calendar-off-label, .week-calendar[data-calendar-view="events"] .scheduled-on { display: none; }
+    .week-calendar[data-calendar-view="events"] .calendar-point.calendar-conflict { margin-left: calc(var(--calendar-collision) * .32rem); }
+    .week-calendar[data-calendar-view="events"] .calendar-conflict-winner { box-shadow: 0 0 0 2px #fbbf24; }
+    .week-calendar[data-calendar-view="state"] .calendar-event-legend { display: none; }
+    .week-calendar[data-calendar-view="events"] .scheduled-on, .week-calendar[data-calendar-view="events"] .scheduled-off, .week-calendar[data-calendar-view="events"] .calendar-state-legend { display: none; }
     .calendar-legend { display: flex; flex-wrap: wrap; gap: .35rem .8rem; color: var(--muted); font-size: .62rem; }
     .calendar-legend span { display: inline-flex; align-items: center; gap: .3rem; }
     .calendar-legend i { width: .55rem; height: .55rem; border-radius: 50%; }
     .calendar-on-key { background: #16a34a; }
     .calendar-off-key { background: #dc2626; }
     .calendar-legend .calendar-scheduled-key { width: .9rem; border-radius: .2rem; background: #15803d; }
+    .calendar-legend .calendar-scheduled-off-key { width: .9rem; border: 1px solid var(--strong-border); border-radius: .2rem; background: rgb(100 116 139 / 12%); }
     .calendar-legend .calendar-window-key { width: .9rem; border-radius: .2rem; background: #0369a1; }
+    .calendar-empty, .calendar-selection, .calendar-conflict-warning { display: grid; gap: .4rem; margin: 0; padding: .65rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--raised-surface); font-size: .72rem; }
+    .calendar-empty > span, .calendar-selection-detail, .calendar-conflict-warning span { color: var(--muted); }
+    .calendar-empty > div { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .calendar-selection[hidden] { display: none; }
+    .calendar-selection-heading, .calendar-selection-actions { display: flex; align-items: center; gap: .45rem; }
+    .calendar-selection-detail { margin: 0; }
+    .calendar-selection-actions { justify-content: flex-end; }
+    .calendar-inline-editor[hidden] { display: none; }
+    .calendar-inline-editor .schedule-editor { margin: .25rem 0 0; }
+    .calendar-inline-editor .schedule-editor > summary { display: none; }
+    .calendar-winner-badge { padding: .12rem .35rem; border-radius: 999px; color: #422006; background: #fde68a; font-size: .58rem; font-weight: 800; text-transform: uppercase; }
+    .calendar-conflict-warning { grid-template-columns: auto minmax(0, 1fr); border-color: #92400e; background: rgb(120 53 15 / 12%); }
+    .calendar-conflict-warning strong { color: var(--warning); }
     .light-chart { margin: .25rem 0 0; padding-top: .75rem; border-top: 1px solid var(--border); }
     .light-chart figcaption { display: grid; gap: .15rem; margin-bottom: .35rem; }
     .light-chart figcaption strong { font-size: .85rem; }
@@ -298,31 +334,71 @@
       .week-calendar { padding: .75rem; }
       .week-calendar-header { align-items: stretch; flex-direction: column; }
       .calendar-view-toggle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .calendar-day-picker { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .2rem; }
+      .calendar-day-button { display: grid; place-items: center; min-width: 0; min-height: 44px; padding: .3rem .05rem; border: 1px solid var(--border); border-radius: .4rem; color: var(--muted); background: var(--raised-surface); font-size: .6rem; }
+      .calendar-day-button small { font-size: .48rem; }
+      .calendar-day-button.active { border-color: #3b82f6; color: #eff6ff; background: #2563eb; }
       .calendar-axis { margin-left: 2.75rem; }
+      .calendar-day:not(.calendar-mobile-selected) { display: none; }
       .calendar-day { grid-template-columns: 2.25rem minmax(0, 1fr); gap: .3rem; }
       .calendar-entry > span { font-size: .52rem; }
       .week-calendar[data-calendar-view="state"] .calendar-point > span { font-size: .44rem; }
       .window-flow { grid-template-columns: 1fr; }
       .window-arrow { justify-self: center; transform: rotate(90deg); }
     }
+    /* Apply the app theme to reusable Semantic UI components. */
+    .ui.segment, .ui.card, .ui.message { color: var(--foreground); border-color: var(--border); background: var(--surface); }
+    .ui.segment { box-shadow: 0 1px 2px var(--shadow); }
+    .ui.message > .header, .ui.card > .content > .header { color: var(--foreground); }
+    .ui.message p, .ui.card > .content > .description, .ui.card > .content > .meta { color: var(--muted); }
+    .ui.form .field > label, .ui.form label { color: var(--muted); }
+    .ui.form input:not([type]), .ui.form input[type="text"], .ui.form input[type="time"],
+    .ui.form input[type="number"], .ui.form select {
+      color: var(--foreground);
+      border-color: var(--strong-border);
+      background: var(--input-surface);
+    }
+    .ui.form input:focus, .ui.form select:focus { color: var(--foreground); border-color: #2185d0; background: var(--input-surface); }
+    .ui.button { font-family: inherit; }
+    .ui.basic.button { color: var(--foreground) !important; box-shadow: 0 0 0 1px var(--strong-border) inset; }
+    .ui.basic.button:hover { color: var(--foreground) !important; background: var(--raised-surface) !important; }
+    .ui.cards.plug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; margin: 0; }
+    .ui.cards.plug-grid::after { display: none; }
+    .ui.cards.plug-grid > .ui.card { width: 100%; margin: 0; }
+    .ui.card.plug-card { border: 1px solid var(--border); border-radius: 1rem; background: var(--surface); box-shadow: 0 1rem 2rem var(--shadow); }
+    .ui.card.plug-card > .content, .ui.card.plug-card > .extra.content,
+    .ui.card.timer-rule > .content, .ui.card.timer-rule > .extra.content,
+    .ui.card.schedule-rule > .content { border-color: var(--border); background: transparent; }
+    .ui.card.weather-card { width: 100%; margin: 1rem 0; background: var(--surface); }
+    .ui.card.weather-card .weather-grid { margin-top: .75rem; }
+    .ui.card.timer-rule, .ui.card.schedule-rule { width: 100%; background: var(--raised-surface); }
+    .ui.segment.week-calendar { background: var(--surface); }
+    .ui.label.state.state-on { color: #052e16; background: #86efac; }
+    .ui.label.state.state-off { color: #450a0a; background: #fca5a5; }
+    .ui.label.state.state-mixed { color: #422006; background: #fde68a; }
+    .ui.label.state.state-unavailable { color: #fff; background: #475569; }
+    .ui.label.state { margin: 0; }
   </style>
 </head>
 <body>
-  <main>
+  <main class="ui container app-container">
     <header>
       <div>
         <h1>Smart plugs</h1>
         <p class="subtitle">Remember and control Kasa plugs on your local network.</p>
       </div>
       <div class="header-actions">
-        <button class="install-app" type="button" hidden>Install app</button>
-        <button class="theme-toggle" type="button">
+        <button class="ui basic button install-app" type="button" hidden><i class="download icon" aria-hidden="true"></i>Install app</button>
+        <button class="ui basic button theme-toggle" type="button">
+          <i class="adjust icon" aria-hidden="true"></i>
           <span class="theme-label">Switch to dark theme</span>
         </button>
-        <button class="add-group" type="button" hx-get="/groups/new" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+        <button class="ui primary button add-group" type="button" hx-get="/groups/new" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+          <i class="users icon" aria-hidden="true"></i>
           <span class="button-label">Add group</span>
         </button>
-        <button class="scan" hx-post="/scan" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="this">
+        <button class="ui button scan" hx-post="/scan" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="this">
+          <i class="search icon" aria-hidden="true"></i>
           <span class="button-label">Scan for devices</span>
         </button>
       </div>
@@ -403,6 +479,7 @@
         const pane = document.getElementById("device-pane");
         restorePaneWidth(pane);
         pane.showModal();
+        initializeSemanticControls(pane);
         pane.querySelectorAll(".light-rule-form").forEach(updateLightRuleForm);
       }
     });
@@ -451,6 +528,15 @@
         "Active daily from " + start + " until " + end + ".";
     }
 
+    function initializeSemanticControls(root) {
+      $(root).find(".schedule-add-dropdown").dropdown({
+        action: "hide",
+        onChange: function (value) {
+          if (value) openAddSchedule(value);
+        }
+      });
+    }
+
     function setCalendarView(button, view) {
       const calendar = button.closest(".week-calendar");
       calendar.dataset.calendarView = view;
@@ -461,13 +547,128 @@
       });
     }
 
-    function openScheduleEditor(id) {
-      const editor = document.getElementById("schedule-editor-" + id);
-      if (!editor) return;
-      editor.open = true;
-      editor.scrollIntoView({ behavior: "smooth", block: "center" });
+    function setCalendarDay(button, day) {
+      const calendar = button.closest(".week-calendar");
+      calendar.querySelectorAll(".calendar-day-button").forEach(function (dayButton) {
+        const selected = Number(dayButton.dataset.calendarDay) === day;
+        dayButton.classList.toggle("active", selected);
+        dayButton.setAttribute("aria-pressed", String(selected));
+      });
+      calendar.querySelectorAll(".calendar-day").forEach(function (dayView) {
+        dayView.classList.toggle("calendar-mobile-selected", Number(dayView.dataset.calendarDay) === day);
+      });
     }
 
+    function selectCalendarEntry(entry) {
+      const calendar = entry.closest(".week-calendar");
+      const selection = calendar.querySelector(".calendar-selection");
+      if (selection.dataset.ruleId !== entry.dataset.ruleId) restoreCalendarEditor(calendar);
+      calendar.querySelectorAll("[data-calendar-entry]").forEach(function (candidate) {
+        candidate.setAttribute("aria-pressed", String(candidate === entry));
+      });
+      selection.hidden = false;
+      selection.dataset.ruleId = entry.dataset.ruleId;
+      selection.dataset.enabled = entry.dataset.enabled;
+      selection.querySelector(".calendar-selection-name").textContent = entry.dataset.name;
+      selection.querySelector(".calendar-selection-detail").textContent = entry.dataset.detail;
+      selection.querySelector(".calendar-winner-badge").hidden = entry.dataset.winner !== "true";
+      const enabledButton = selection.querySelector(".calendar-enabled-button");
+      const enabled = entry.dataset.enabled === "true";
+      enabledButton.textContent = enabled ? "Disable rule" : "Enable rule";
+      enabledButton.classList.toggle("danger", enabled);
+    }
+
+    function restoreCalendarEditor(calendar) {
+      const host = calendar.querySelector(".calendar-inline-editor");
+      const editor = host.querySelector(".schedule-editor");
+      if (editor) {
+        const pane = calendar.closest(".device-pane");
+        const placeholder = pane.querySelector('[data-calendar-editor-placeholder="' + editor.id + '"]');
+        editor.open = false;
+        if (placeholder) placeholder.replaceWith(editor);
+      }
+      host.hidden = true;
+      calendar.querySelector(".calendar-edit-button").textContent = "Edit rule";
+    }
+
+    function editSelectedCalendarRule(button) {
+      const selection = button.closest(".calendar-selection");
+      const calendar = selection.closest(".week-calendar");
+      const host = selection.querySelector(".calendar-inline-editor");
+      const current = host.querySelector(".schedule-editor");
+      const editorId = "schedule-editor-" + selection.dataset.ruleId;
+      if (current && current.id === editorId) {
+        restoreCalendarEditor(calendar);
+        return;
+      }
+      restoreCalendarEditor(calendar);
+      const editor = document.getElementById(editorId);
+      if (!editor) return;
+      const placeholder = document.createElement("span");
+      placeholder.hidden = true;
+      placeholder.dataset.calendarEditorPlaceholder = editor.id;
+      editor.before(placeholder);
+      host.append(editor);
+      host.hidden = false;
+      editor.open = true;
+      button.textContent = "Close editor";
+    }
+
+    function setSelectedCalendarRuleEnabled(button) {
+      const selection = button.closest(".calendar-selection");
+      const calendar = selection.closest(".week-calendar");
+      const enabled = selection.dataset.enabled === "true";
+      button.disabled = true;
+      htmx.ajax("POST", calendar.dataset.automationBase + "/" + selection.dataset.ruleId + "/enabled", {
+        target: "#device-pane",
+        swap: "outerHTML",
+        values: { on: String(!enabled) }
+      }).catch(function () {
+        button.disabled = false;
+      });
+    }
+
+    function deleteSelectedCalendarRule(button) {
+      if (!window.confirm("Delete this schedule?")) return;
+      const selection = button.closest(".calendar-selection");
+      const calendar = selection.closest(".week-calendar");
+      button.disabled = true;
+      htmx.ajax("DELETE", calendar.dataset.automationBase + "/" + selection.dataset.ruleId, {
+        target: "#device-pane",
+        swap: "outerHTML"
+      }).catch(function () {
+        button.disabled = false;
+      });
+    }
+
+    function openScheduleAddMenu() {
+      const dropdown = document.querySelector(".schedule-add-dropdown");
+      if (!dropdown) return;
+      const control = dropdown.closest(".schedule-add-control");
+      control.querySelectorAll(".schedule-add-form[open]").forEach(function (form) {
+        form.open = false;
+      });
+      $(dropdown).dropdown("show");
+      control.scrollIntoView({ behavior: "smooth", block: "center" });
+      dropdown.focus({ preventScroll: true });
+    }
+
+    function openAddSchedule(id) {
+      const form = document.getElementById(id);
+      if (!form) return;
+      const control = form.closest(".schedule-add-control");
+      control.querySelectorAll(".schedule-add-form[open]").forEach(function (openForm) {
+        openForm.open = false;
+      });
+      $(control.querySelector(".schedule-add-dropdown")).dropdown("hide");
+      form.open = true;
+      form.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    document.body.addEventListener("click", function (event) {
+      const entry = event.target.closest("[data-calendar-entry]");
+      if (entry) selectCalendarEntry(entry);
+    });
     document.body.addEventListener("input", function (event) {
       const form = event.target.closest(".light-rule-form");
       if (form) updateLightRuleForm(form);

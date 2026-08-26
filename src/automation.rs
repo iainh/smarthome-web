@@ -104,6 +104,7 @@ fn enabled_by_default() -> bool {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WeatherStatus {
     pub local_time: String,
+    pub current_minute: u16,
     pub timezone: String,
     pub condition: &'static str,
     pub is_day: bool,
@@ -571,6 +572,7 @@ impl WeatherSnapshot {
     fn status(&self) -> WeatherStatus {
         WeatherStatus {
             local_time: local_time(self.time, self.utc_offset_seconds),
+            current_minute: local_minute(self.time, self.utc_offset_seconds),
             timezone: self.timezone_abbreviation.clone(),
             condition: weather_condition(self.weather_code),
             is_day: self.is_day,
@@ -1127,6 +1129,7 @@ mod tests {
         assert_eq!(average_at_eight.radiation, 500.0);
         let status = snapshot.status();
         assert_eq!(status.local_time, "11:46 PM");
+        assert_eq!(status.current_minute, 23 * 60 + 46);
         assert_eq!(status.condition, "Overcast");
         assert_eq!(status.cloud_cover, 100);
         assert!(!status.is_day);

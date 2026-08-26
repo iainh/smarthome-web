@@ -1,22 +1,24 @@
-<article class="plug-card group-card">
-  <div class="plug-heading">
-    <div>
-      <h3>{{ group.name }}</h3>
-      <p class="model">{{ group.reachable_count }} of {{ group.member_count }} members remembered</p>
+<article class="ui fluid card plug-card group-card">
+  <div class="content">
+    <span class="right floated ui mini label state {{ group.state_class }}">{{ group.state }}</span>
+    <h3 class="header">{{ group.name }}</h3>
+    <p class="meta model">{{ group.reachable_count }} of {{ group.member_count }} members remembered</p>
+    <p class="description group-members">{{ group.members }}</p>
+    {% if group.has_offline_members %}
+      <div class="ui tiny warning message group-warning">Some members are not in the remembered inventory. Remembered members can still be controlled.</div>
+    {% endif %}
+  </div>
+  <div class="content">
+    <div class="group-relay-actions">
+      <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <button class="ui fluid primary button toggle" type="submit" name="on" value="true"><i class="power off icon" aria-hidden="true"></i>Turn on</button>
+      </form>
+      <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <button class="ui fluid negative button toggle toggle-off" type="submit" name="on" value="false"><i class="power off icon" aria-hidden="true"></i>Turn off</button>
+      </form>
     </div>
-    <span class="state {{ group.state_class }}">{{ group.state }}</span>
   </div>
-  <p class="group-members">{{ group.members }}</p>
-  {% if group.has_offline_members %}
-    <p class="group-warning">Some members are not in the remembered inventory. Remembered members can still be controlled.</p>
-  {% endif %}
-  <div class="group-relay-actions">
-    <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
-      <button class="toggle" type="submit" name="on" value="true">Turn on</button>
-    </form>
-    <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
-      <button class="toggle toggle-off" type="submit" name="on" value="false">Turn off</button>
-    </form>
+  <div class="extra content">
+    <button class="ui fluid button small-button group-edit" type="button" hx-get="/groups/{{ group.id }}" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="edit outline icon" aria-hidden="true"></i>Edit group</button>
   </div>
-  <button class="small-button group-edit" type="button" hx-get="/groups/{{ group.id }}" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">Edit group</button>
 </article>
