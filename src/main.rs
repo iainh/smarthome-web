@@ -2860,7 +2860,7 @@ mod tests {
             .unwrap();
 
         assert!(fragment.contains("No timed schedules yet"));
-        assert!(fragment.contains("onclick=\"openScheduleAddMenu()\""));
+        assert!(!fragment.contains("openScheduleAddMenu"));
         assert!(fragment.contains(
             "class=\"ui primary floating dropdown button schedule-add-dropdown schedule-add-button\""
         ));

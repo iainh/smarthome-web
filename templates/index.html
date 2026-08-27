@@ -262,7 +262,6 @@
     .calendar-legend .calendar-window-key { width: .9rem; border-radius: .2rem; background: #0369a1; }
     .calendar-empty, .calendar-selection, .calendar-conflict-warning { display: grid; gap: .4rem; margin: 0; padding: .65rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--raised-surface); font-size: .72rem; }
     .calendar-empty > span, .calendar-selection-detail, .calendar-conflict-warning span { color: var(--muted); }
-    .calendar-empty > div { display: flex; flex-wrap: wrap; gap: .4rem; }
     .calendar-selection[hidden] { display: none; }
     .calendar-selection-heading, .calendar-selection-actions { display: flex; align-items: center; gap: .45rem; }
     .calendar-selection-detail { margin: 0; }
@@ -639,18 +638,6 @@
       }).catch(function () {
         button.disabled = false;
       });
-    }
-
-    function openScheduleAddMenu() {
-      const dropdown = document.querySelector(".schedule-add-dropdown");
-      if (!dropdown) return;
-      const control = dropdown.closest(".schedule-add-control");
-      control.querySelectorAll(".schedule-add-form[open]").forEach(function (form) {
-        form.open = false;
-      });
-      $(dropdown).dropdown("show");
-      control.scrollIntoView({ behavior: "smooth", block: "center" });
-      dropdown.focus({ preventScroll: true });
     }
 
     function openAddSchedule(id) {
