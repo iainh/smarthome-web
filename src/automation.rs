@@ -1,4 +1,5 @@
 use crate::database::{Database, WeatherObservation};
+use crate::group::automation_group_id;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use smarthome::{SmartHomeClient, SmartPlug};
@@ -298,7 +299,12 @@ impl AutomationEngine {
             if !rule.enabled {
                 continue;
             }
-            let Some(plug) = plugs.get(&rule.device_id) else {
+            let target_device_ids = self.target_device_ids(&rule.device_id)?;
+            let Some(plug) = target_device_ids.iter().find_map(|device_id| {
+                plugs
+                    .get(device_id)
+                    .filter(|plug| Coordinate::from_plug(plug).is_some())
+            }) else {
                 continue;
             };
             let Some(key) = Coordinate::from_plug(plug) else {
@@ -314,7 +320,11 @@ impl AutomationEngine {
             if let Some(day) = evaluation.trigger_day {
                 triggered_timed_rules.push((rule.id, day));
             }
-            device_evaluations.insert(rule.device_id, evaluation.turn_on);
+            for device_id in target_device_ids {
+                if plugs.contains_key(&device_id) {
+                    device_evaluations.insert(device_id, evaluation.turn_on);
+                }
+            }
         }
 
         for (device_id, turn_on) in device_evaluations {
@@ -398,6 +408,21 @@ impl AutomationEngine {
                  FROM automations ORDER BY id",
                 [],
             )
+        })
+    }
+
+    fn target_device_ids(&self, target: &str) -> Result<Vec<String>> {
+        let Some(group_id) = automation_group_id(target) else {
+            return Ok(vec![target.to_owned()]);
+        };
+        self.database.with_connection(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT device_id FROM group_devices WHERE group_id = ?1 ORDER BY position",
+            )?;
+            let device_ids = statement
+                .query_map([group_id as i64], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(device_ids)
         })
     }
 }
@@ -857,6 +882,7 @@ fn weather_condition(code: u8) -> &'static str {
 mod tests {
     use super::*;
     use crate::database::Database;
+    use crate::group::{automation_target, GroupEngine};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -885,6 +911,33 @@ mod tests {
         assert_eq!(format_clock_time(11, 5), "11:05 AM");
         assert_eq!(format_clock_time(12, 0), "12:00 PM");
         assert_eq!(format_clock_time(23, 59), "11:59 PM");
+    }
+
+    #[test]
+    fn group_targets_resolve_the_current_membership() {
+        let database = Arc::new(Database::open(":memory:").unwrap());
+        let groups = GroupEngine::new(database.clone());
+        let group_id = groups
+            .add("Lights", vec!["plug-1".to_owned(), "plug-2".to_owned()])
+            .unwrap();
+        let engine = AutomationEngine::new(database).unwrap();
+
+        assert_eq!(
+            engine
+                .target_device_ids(&automation_target(group_id))
+                .unwrap(),
+            vec!["plug-1", "plug-2"]
+        );
+
+        groups
+            .update(group_id, "Lights", vec!["plug-3".to_owned()])
+            .unwrap();
+        assert_eq!(
+            engine
+                .target_device_ids(&automation_target(group_id))
+                .unwrap(),
+            vec!["plug-3"]
+        );
     }
 
     #[test]

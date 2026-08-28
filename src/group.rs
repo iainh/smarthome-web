@@ -8,6 +8,7 @@ use std::io;
 use std::sync::Arc;
 
 const MAX_GROUPS: usize = 50;
+const GROUP_TARGET_PREFIX: &str = "group:";
 
 type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -16,6 +17,14 @@ pub struct DeviceGroup {
     pub id: u64,
     pub name: String,
     pub device_ids: Vec<String>,
+}
+
+pub fn automation_target(id: u64) -> String {
+    format!("{GROUP_TARGET_PREFIX}{id}")
+}
+
+pub fn automation_group_id(target: &str) -> Option<u64> {
+    target.strip_prefix(GROUP_TARGET_PREFIX)?.parse().ok()
 }
 
 pub struct GroupEngine {
@@ -99,7 +108,16 @@ impl GroupEngine {
             return Ok(false);
         };
         self.database.with_connection(|connection| {
-            Ok(connection.execute("DELETE FROM groups WHERE id = ?1", [id])? != 0)
+            let transaction = connection.transaction()?;
+            let deleted = transaction.execute("DELETE FROM groups WHERE id = ?1", [id])? != 0;
+            if deleted {
+                transaction.execute(
+                    "DELETE FROM automations WHERE device_id = ?1",
+                    [automation_target(id as u64)],
+                )?;
+            }
+            transaction.commit()?;
+            Ok(deleted)
         })
     }
 }
@@ -253,6 +271,40 @@ mod tests {
             .add("One too many", vec!["extra-plug".to_owned()])
             .is_err());
         assert_eq!(groups.groups().unwrap().len(), MAX_GROUPS);
+
+        drop(groups);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn deleting_a_group_deletes_its_automations() {
+        let path = temporary_store();
+        let groups = engine(&path);
+        let id = groups.add("Lights", vec!["plug-1".to_owned()]).unwrap();
+        groups
+            .database
+            .with_connection(|connection| {
+                connection.execute(
+                    "INSERT INTO automations (device_id, trigger_json, turn_on) VALUES (?1, ?2, 1)",
+                    params![automation_target(id), r#"{"type":"fixed_time","minute_of_day":420,"weekdays":[true,true,true,true,true,true,true]}"#],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(groups.delete(id).unwrap());
+        groups
+            .database
+            .with_connection(|connection| {
+                let count: i64 = connection.query_row(
+                    "SELECT COUNT(*) FROM automations WHERE device_id = ?1",
+                    [automation_target(id)],
+                    |row| row.get(0),
+                )?;
+                assert_eq!(count, 0);
+                Ok(())
+            })
+            .unwrap();
 
         drop(groups);
         fs::remove_file(path).unwrap();

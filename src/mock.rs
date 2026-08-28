@@ -9,6 +9,13 @@ use std::sync::{Arc, Mutex};
 const MOCK_PORT: u16 = 9999;
 const MAX_FRAME_LENGTH: usize = 16 * 1024;
 
+pub fn groups() -> Vec<(&'static str, Vec<String>)> {
+    vec![(
+        "Living room",
+        vec!["mock-outlet-2".to_owned(), "mock-outlet-4".to_owned()],
+    )]
+}
+
 struct Outlet {
     plug: SmartPlug,
     countdown_rules: Vec<Value>,
@@ -263,6 +270,17 @@ mod tests {
                 .unwrap()
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn mock_inventory_includes_a_group() {
+        assert_eq!(
+            groups(),
+            vec![(
+                "Living room",
+                vec!["mock-outlet-2".to_owned(), "mock-outlet-4".to_owned()]
+            )]
         );
     }
 }

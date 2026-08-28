@@ -19,6 +19,9 @@
     </div>
   </div>
   <div class="extra content">
-    <button class="ui fluid button small-button group-edit" type="button" hx-get="/groups/{{ group.id }}" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="edit outline icon" aria-hidden="true"></i>Edit group</button>
+    <div class="plug-actions">
+      <button class="ui button automation-button" type="button" hx-get="/groups/{{ group.id }}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="calendar alternate outline icon" aria-hidden="true"></i><span class="button-label">Automations</span></button>
+      <button class="ui button small-button group-edit" type="button" hx-get="/groups/{{ group.id }}" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="edit outline icon" aria-hidden="true"></i><span class="button-label">Edit group</span></button>
+    </div>
   </div>
 </article>

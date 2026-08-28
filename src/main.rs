@@ -14,7 +14,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use database::Database;
-use group::{DeviceGroup, GroupEngine};
+use group::{automation_target, DeviceGroup, GroupEngine};
 use minijinja::{context, AutoEscape, Environment};
 use serde::{Deserialize, Serialize};
 use smarthome::{CountdownRule, ScheduleRule, SmartHomeClient, SmartPlug};
@@ -158,6 +158,7 @@ struct LightAutomationForm {
 #[derive(Serialize)]
 struct AutomationPanel {
     address: String,
+    automation_base: String,
     location_available: bool,
     weather: Option<WeatherStatus>,
     calendar: Option<WeekCalendarView>,
@@ -386,11 +387,17 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     };
     let database = Arc::new(Database::open(database_path)?);
     database.migrate_legacy_json(automation_path, group_path)?;
+    let mock_enabled = mock_devices.is_some();
     if let Some(devices) = mock_devices {
         database.remember_devices(&devices)?;
     }
     let automations = Arc::new(AutomationEngine::new(database.clone())?);
     let groups = Arc::new(GroupEngine::new(database.clone()));
+    if mock_enabled && groups.groups()?.is_empty() {
+        for (name, device_ids) in mock::groups() {
+            groups.add(name, device_ids)?;
+        }
+    }
     let state = Arc::new(AppState {
         client: SmartHomeClient::new(),
         templates: templates()?,
@@ -417,6 +424,39 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             get(edit_group).post(update_group).delete(delete_group),
         )
         .route("/groups/{id}/relay", post(set_group_relay))
+        .route("/groups/{id}/automations", get(get_group_automations))
+        .route(
+            "/groups/{id}/automations/fixed",
+            post(create_group_fixed_automation),
+        )
+        .route(
+            "/groups/{id}/automations/solar",
+            post(create_group_solar_automation),
+        )
+        .route(
+            "/groups/{id}/automations/light",
+            post(create_group_light_automation),
+        )
+        .route(
+            "/groups/{id}/automations/{automation_id}",
+            axum::routing::delete(delete_group_automation),
+        )
+        .route(
+            "/groups/{id}/automations/{automation_id}/enabled",
+            post(set_group_automation_enabled),
+        )
+        .route(
+            "/groups/{id}/automations/{automation_id}/fixed",
+            post(update_group_fixed_automation),
+        )
+        .route(
+            "/groups/{id}/automations/{automation_id}/solar",
+            post(update_group_solar_automation),
+        )
+        .route(
+            "/groups/{id}/automations/{automation_id}/light",
+            post(update_group_light_automation),
+        )
         .route("/plugs/{address}/relay", post(set_relay))
         .route("/plugs/{address}/automations", get(get_automations))
         .route(
@@ -748,6 +788,133 @@ async fn set_group_relay(
     let unavailable = offline + failed;
     let notice = group_relay_notice(&group.name, form.on, controlled.len(), unavailable);
     render_device_list(&state, load_device_list(&state, Some(notice))?)
+}
+
+async fn get_group_automations(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u64>,
+) -> Result<Html<String>, AppError> {
+    render_group_automation_panel(&state, id).await
+}
+
+async fn create_group_fixed_automation(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u64>,
+    Form(form): Form<ScheduleForm>,
+) -> Result<Html<String>, AppError> {
+    require_group_location(&state, id)?;
+    state
+        .automations
+        .add(fixed_automation(form, automation_target(id))?)
+        .map_err(automation_error)?;
+    render_group_automation_panel(&state, id).await
+}
+
+async fn create_group_solar_automation(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u64>,
+    Form(form): Form<SolarAutomationForm>,
+) -> Result<Html<String>, AppError> {
+    require_group_location(&state, id)?;
+    state
+        .automations
+        .add(solar_automation(form, automation_target(id))?)
+        .map_err(automation_error)?;
+    render_group_automation_panel(&state, id).await
+}
+
+async fn create_group_light_automation(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u64>,
+    Form(form): Form<LightAutomationForm>,
+) -> Result<Html<String>, AppError> {
+    require_group_location(&state, id)?;
+    state
+        .automations
+        .add(light_automation(form, automation_target(id))?)
+        .map_err(automation_error)?;
+    render_group_automation_panel(&state, id).await
+}
+
+async fn update_group_fixed_automation(
+    State(state): State<Arc<AppState>>,
+    Path((id, automation_id)): Path<(u64, u64)>,
+    Form(form): Form<ScheduleForm>,
+) -> Result<Html<String>, AppError> {
+    let automation = fixed_automation(form, automation_target(id))?;
+    update_group_automation(&state, id, automation_id, automation).await
+}
+
+async fn update_group_solar_automation(
+    State(state): State<Arc<AppState>>,
+    Path((id, automation_id)): Path<(u64, u64)>,
+    Form(form): Form<SolarAutomationForm>,
+) -> Result<Html<String>, AppError> {
+    let automation = solar_automation(form, automation_target(id))?;
+    update_group_automation(&state, id, automation_id, automation).await
+}
+
+async fn update_group_light_automation(
+    State(state): State<Arc<AppState>>,
+    Path((id, automation_id)): Path<(u64, u64)>,
+    Form(form): Form<LightAutomationForm>,
+) -> Result<Html<String>, AppError> {
+    let automation = light_automation(form, automation_target(id))?;
+    update_group_automation(&state, id, automation_id, automation).await
+}
+
+async fn update_group_automation(
+    state: &AppState,
+    id: u64,
+    automation_id: u64,
+    automation: NewAutomation,
+) -> Result<Html<String>, AppError> {
+    find_group(state, id)?;
+    if !state
+        .automations
+        .update(&automation_target(id), automation_id, automation)
+        .map_err(automation_error)?
+    {
+        return Err(AppError::not_found(format!(
+            "automation {automation_id} was not found"
+        )));
+    }
+    render_group_automation_panel(state, id).await
+}
+
+async fn set_group_automation_enabled(
+    State(state): State<Arc<AppState>>,
+    Path((id, automation_id)): Path<(u64, u64)>,
+    Form(form): Form<RelayForm>,
+) -> Result<Html<String>, AppError> {
+    find_group(&state, id)?;
+    if !state
+        .automations
+        .set_enabled(&automation_target(id), automation_id, form.on)
+        .map_err(automation_error)?
+    {
+        return Err(AppError::not_found(format!(
+            "automation {automation_id} was not found"
+        )));
+    }
+    render_group_automation_panel(&state, id).await
+}
+
+async fn delete_group_automation(
+    State(state): State<Arc<AppState>>,
+    Path((id, automation_id)): Path<(u64, u64)>,
+) -> Result<Html<String>, AppError> {
+    find_group(&state, id)?;
+    if !state
+        .automations
+        .delete(&automation_target(id), automation_id)
+        .map_err(automation_error)?
+    {
+        return Err(AppError::not_found(format!(
+            "automation {automation_id} was not found"
+        )));
+    }
+    render_group_automation_panel(&state, id).await
 }
 
 async fn get_automations(
@@ -1477,12 +1644,88 @@ async fn load_automation_panel(
         .map(|weather| week_calendar_view(&rules, weather));
     Ok(AutomationPanel {
         address: plug.address.to_string(),
+        automation_base: format!("/plugs/{}/automations", plug.address),
         location_available,
         weather,
         calendar,
         rules: rules.into_iter().map(automation_view).collect(),
         schedules,
     })
+}
+
+fn group_location_plug(
+    state: &AppState,
+    group: &DeviceGroup,
+) -> Result<Option<SmartPlug>, AppError> {
+    let inventory: HashMap<_, _> = remembered_plugs(state)?
+        .into_iter()
+        .map(|plug| (plug.device_id.clone(), plug))
+        .collect();
+    let first_available = group
+        .device_ids
+        .iter()
+        .find_map(|device_id| inventory.get(device_id));
+    Ok(group
+        .device_ids
+        .iter()
+        .filter_map(|device_id| inventory.get(device_id))
+        .find(|plug| plug.latitude.is_some() && plug.longitude.is_some())
+        .or(first_available)
+        .cloned())
+}
+
+fn require_group_location(state: &AppState, id: u64) -> Result<SmartPlug, AppError> {
+    let group = find_group(state, id)?;
+    let plug = group_location_plug(state, &group)?.ok_or_else(|| {
+        AppError::bad_request("the group has no remembered members with a location")
+    })?;
+    require_location(&plug)?;
+    Ok(plug)
+}
+
+async fn render_group_automation_panel(
+    state: &AppState,
+    id: u64,
+) -> Result<Html<String>, AppError> {
+    let group = find_group(state, id)?;
+    let target = automation_target(id);
+    let rules = state
+        .automations
+        .rules_for(&target)
+        .map_err(automation_error)?;
+    let plug = group_location_plug(state, &group)?;
+    let location_available = plug
+        .as_ref()
+        .is_some_and(|plug| plug.latitude.is_some() && plug.longitude.is_some());
+    let weather = match plug.as_ref() {
+        Some(plug) if location_available => match state.automations.weather_status(plug).await {
+            Ok(weather) => Some(weather),
+            Err(error) => {
+                eprintln!("could not load current weather: {error}");
+                None
+            }
+        },
+        _ => None,
+    };
+    let calendar = weather
+        .as_ref()
+        .map(|weather| week_calendar_view(&rules, weather));
+    render_automation_panel(
+        state,
+        &AutomationPanel {
+            address: group.name,
+            automation_base: format!("/groups/{id}/automations"),
+            location_available,
+            weather,
+            calendar,
+            rules: rules.into_iter().map(automation_view).collect(),
+            schedules: SchedulePanel {
+                migratable_count: 0,
+                unsupported_count: 0,
+                rules: Vec::new(),
+            },
+        },
+    )
 }
 
 fn week_calendar_view(rules: &[AutomationRule], weather: &WeatherStatus) -> WeekCalendarView {
@@ -2579,12 +2822,55 @@ mod tests {
             .unwrap();
 
         assert!(fragment.contains("hx-post=\"/groups/3/relay\""));
+        assert!(fragment.contains("hx-get=\"/groups/3/automations\""));
         assert!(fragment.contains("name=\"on\" value=\"true\""));
         assert!(fragment.contains("name=\"on\" value=\"false\""));
         assert!(fragment.contains("hx-get=\"/groups/3\""));
         assert!(fragment.contains("&lt;Downstairs&gt;"));
         assert!(fragment.contains("Lamp &amp; fan"));
         assert!(fragment.contains("Some members are not in the remembered inventory"));
+    }
+
+    #[test]
+    fn automation_panel_uses_group_routes() {
+        let panel = AutomationPanel {
+            address: "Living room".to_owned(),
+            automation_base: "/groups/3/automations".to_owned(),
+            location_available: true,
+            weather: None,
+            calendar: None,
+            rules: vec![automation_view(AutomationRule {
+                id: 9,
+                device_id: automation_target(3),
+                name: "Morning".to_owned(),
+                enabled: true,
+                trigger: AutomationTrigger::FixedTime {
+                    minute_of_day: 7 * 60,
+                    weekdays: [true; 7],
+                },
+                turn_on: true,
+                last_solar_day: None,
+            })],
+            schedules: SchedulePanel {
+                migratable_count: 0,
+                unsupported_count: 0,
+                rules: Vec::new(),
+            },
+        };
+
+        let fragment = templates()
+            .unwrap()
+            .get_template("automation-panel.html")
+            .unwrap()
+            .render(context! { panel })
+            .unwrap();
+
+        assert!(fragment.contains("Living room"));
+        assert!(fragment.contains("hx-post=\"/groups/3/automations/fixed\""));
+        assert!(fragment.contains("hx-post=\"/groups/3/automations/solar\""));
+        assert!(fragment.contains("hx-post=\"/groups/3/automations/light\""));
+        assert!(fragment.contains("hx-post=\"/groups/3/automations/9/fixed\""));
+        assert!(fragment.contains("hx-get=\"/groups/3/automations\""));
     }
 
     #[test]
@@ -2799,6 +3085,7 @@ mod tests {
 
         let panel = AutomationPanel {
             address: "192.0.2.1".to_owned(),
+            automation_base: "/plugs/192.0.2.1/automations".to_owned(),
             location_available: true,
             weather: Some(calendar_weather(4, 8 * 60)),
             calendar: Some(calendar),
@@ -2863,6 +3150,7 @@ mod tests {
 
         let panel = AutomationPanel {
             address: "192.0.2.1".to_owned(),
+            automation_base: "/plugs/192.0.2.1/automations".to_owned(),
             location_available: true,
             calendar: Some(calendar),
             weather: Some(weather),
@@ -2880,8 +3168,9 @@ mod tests {
             .render(context! { panel })
             .unwrap();
         assert!(fragment.contains("No turn-on event is scheduled"));
-        assert!(fragment
-            .contains("The plug stays off until another schedule or manual action changes it."));
+        assert!(fragment.contains(
+            "Covered devices stay off until another schedule or manual action changes them."
+        ));
     }
 
     #[test]
@@ -2889,6 +3178,7 @@ mod tests {
         let weather = calendar_weather(4, 8 * 60);
         let panel = AutomationPanel {
             address: "192.0.2.1".to_owned(),
+            automation_base: "/plugs/192.0.2.1/automations".to_owned(),
             location_available: true,
             calendar: Some(week_calendar_view(&[], &weather)),
             weather: Some(weather),
@@ -3076,6 +3366,7 @@ mod tests {
             .any(|entry| entry.label == "AUTO · ≤ 80 W/m²"));
         let panel = AutomationPanel {
             address: "192.0.2.1".to_owned(),
+            automation_base: "/plugs/192.0.2.1/automations".to_owned(),
             location_available: true,
             calendar: Some(calendar),
             weather: Some(weather),
