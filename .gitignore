@@ -6,3 +6,4 @@ tddp-client.sqlite3-shm
 tddp-client.sqlite3-wal
 **/*.rs.bk
 .idea/**
+.amp/portals/*

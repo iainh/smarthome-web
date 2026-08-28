@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+common_setup_url="https://raw.githubusercontent.com/iainh/amp-orbs/fcb5e318e59d6374081a45bc7769acf01cee0dd2/orb-setup"
+temporary_setup="$(mktemp)"
+trap 'rm -f "$temporary_setup"' EXIT
+
+curl --fail --silent --show-error --location \
+  "$common_setup_url" \
+  --output "$temporary_setup"
+bash "$temporary_setup"
+
+export PATH="$HOME/.cargo/bin:$PATH"
+if ! command -v rustup >/dev/null 2>&1; then
+  curl --proto '=https' --tlsv1.2 --silent --show-error --fail \
+    https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain 1.88.0
+fi
+
+if ! rustup run 1.88.0 rustc --version >/dev/null 2>&1; then
+  rustup toolchain install 1.88.0 --profile minimal
+fi
+rustup default 1.88.0
+cargo fetch --locked
