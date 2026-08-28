@@ -2547,6 +2547,8 @@ mod tests {
         assert!(fragment.contains("Unavailable …12345678"));
         assert!(fragment.contains("role=\"separator\""));
         assert!(fragment.contains("aria-label=\"Resize group pane\""));
+        assert!(fragment.contains("aria-labelledby=\"group-pane-title group-pane-description\""));
+        assert!(fragment.contains("placeholder=\"Living room\" autofocus"));
     }
 
     #[test]
@@ -2876,8 +2878,11 @@ mod tests {
         assert!(fragment.contains(
             "class=\"ui primary floating dropdown button schedule-add-dropdown schedule-add-button\""
         ));
-        assert!(fragment.contains("id=\"schedule-add-menu\" class=\"menu schedule-add-menu\""));
-        assert!(fragment.contains("class=\"item\" data-value=\"add-fixed-schedule\""));
+        assert!(fragment
+            .contains("id=\"schedule-add-menu\" class=\"menu schedule-add-menu\" role=\"menu\""));
+        assert!(fragment.contains(
+            "<button class=\"item\" type=\"button\" role=\"menuitem\" data-value=\"add-fixed-schedule\""
+        ));
         assert!(fragment.contains("id=\"add-fixed-schedule\" class=\"schedule-add-form\""));
         assert!(fragment.contains("id=\"add-solar-schedule\" class=\"schedule-add-form\""));
         assert!(fragment
@@ -3103,6 +3108,9 @@ mod tests {
         assert!(fragment.contains("Active daily from <strong>9:00 AM</strong> until"));
         assert!(fragment.contains("role=\"separator\""));
         assert!(fragment.contains("aria-label=\"Resize automation pane\""));
+        assert!(fragment.contains(
+            "aria-label=\"Close automation pane\" onclick=\"this.closest('dialog').close()\" autofocus"
+        ));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/solar\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/fixed\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/light\""));
@@ -3170,6 +3178,7 @@ mod tests {
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/countdown\""));
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/countdown/timer-id\""));
         assert!(fragment.contains("Turn off in 30 min"));
+        assert!(fragment.contains("aria-labelledby=\"timer-pane-title timer-pane-address\""));
         assert!(fragment.contains("&lt;Web timer&gt;"));
         assert!(!fragment.contains("<Web timer>"));
     }

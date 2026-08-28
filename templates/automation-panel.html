@@ -1,11 +1,11 @@
-<dialog id="device-pane" class="device-pane" aria-label="Automations for {{ panel.address }}">
+<dialog id="device-pane" class="device-pane" aria-labelledby="automation-pane-title automation-pane-address">
   <div class="device-pane-resizer" role="separator" aria-label="Resize automation pane" aria-orientation="vertical" tabindex="0"></div>
   <div class="pane-header">
     <div>
-      <h2>Automations</h2>
-      <span class="schedule-status">{{ panel.address }}</span>
+      <h2 id="automation-pane-title">Automations</h2>
+      <span id="automation-pane-address" class="schedule-status">{{ panel.address }}</span>
     </div>
-    <button class="ui basic icon button pane-close" type="button" aria-label="Close automation pane" onclick="this.closest('dialog').close()"><i class="close icon" aria-hidden="true"></i></button>
+    <button class="ui basic icon button pane-close" type="button" aria-label="Close automation pane" onclick="this.closest('dialog').close()" autofocus><i class="close icon" aria-hidden="true"></i></button>
   </div>
 
   <p class="automation-intro">All schedules below are stored and evaluated by this server every five minutes. If several rules apply together, the most recently added rule wins.</p>
@@ -155,14 +155,14 @@
 
   {% if panel.location_available %}
     <div class="schedule-add-control">
-      <div class="ui primary floating dropdown button schedule-add-dropdown schedule-add-button" aria-label="Add schedule" aria-controls="schedule-add-menu">
+      <div class="ui primary floating dropdown button schedule-add-dropdown schedule-add-button" role="button" aria-label="Add schedule" aria-haspopup="menu" aria-controls="schedule-add-menu">
         <i class="plus icon" aria-hidden="true"></i>
         <span class="text">Add schedule</span>
         <i class="dropdown icon" aria-hidden="true"></i>
-        <div id="schedule-add-menu" class="menu schedule-add-menu">
-          <div class="item" data-value="add-fixed-schedule"><i class="clock outline icon" aria-hidden="true"></i><span><strong>Fixed time</strong><small>Run at a chosen time</small></span></div>
-          <div class="item" data-value="add-solar-schedule"><i class="sun outline icon" aria-hidden="true"></i><span><strong>Sunrise or sunset</strong><small>Follow local daylight</small></span></div>
-          <div class="item" data-value="add-light-schedule"><i class="lightbulb outline icon" aria-hidden="true"></i><span><strong>Outdoor light</strong><small>React to measured light</small></span></div>
+        <div id="schedule-add-menu" class="menu schedule-add-menu" role="menu">
+          <button class="item" type="button" role="menuitem" data-value="add-fixed-schedule"><i class="clock outline icon" aria-hidden="true"></i><span><strong>Fixed time</strong><small>Run at a chosen time</small></span></button>
+          <button class="item" type="button" role="menuitem" data-value="add-solar-schedule"><i class="sun outline icon" aria-hidden="true"></i><span><strong>Sunrise or sunset</strong><small>Follow local daylight</small></span></button>
+          <button class="item" type="button" role="menuitem" data-value="add-light-schedule"><i class="lightbulb outline icon" aria-hidden="true"></i><span><strong>Outdoor light</strong><small>React to measured light</small></span></button>
         </div>
       </div>
       <div class="schedule-add-forms">

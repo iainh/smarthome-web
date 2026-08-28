@@ -97,6 +97,7 @@
     button { border: 0; border-radius: .75rem; padding: .75rem 1rem; font-family: inherit; font-size: 10pt; font-weight: 700; cursor: pointer; transition: transform .15s, opacity .15s; }
     button:hover { transform: translateY(-1px); }
     button:disabled { opacity: .55; }
+    button:focus-visible, .ui.button:focus-visible, summary:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #7dd3fc; outline-offset: 2px; }
     .scan, .theme-toggle, .install-app { color: var(--foreground); background: var(--control-surface); white-space: nowrap; }
     .install-app { color: #fff; background: #0369a1; }
     .add-group { color: #fff; background: #2563eb; }
@@ -192,7 +193,7 @@
     .schedule-add-control { display: grid; gap: .65rem; margin-top: .75rem; }
     .schedule-add-control > .ui.dropdown { justify-self: start; margin: 0; }
     .schedule-add-control > .ui.dropdown .menu { width: min(22rem, calc(100vw - 2.5rem)); border-color: var(--strong-border); background: var(--detail-surface); box-shadow: 0 .75rem 2rem var(--pane-shadow); }
-    .schedule-add-control > .ui.dropdown .menu > .item { display: flex; align-items: center; gap: .5rem; color: var(--foreground); }
+    .schedule-add-control > .ui.dropdown .menu > .item { display: flex; align-items: center; gap: .5rem; width: 100%; border-radius: 0; color: var(--foreground); text-align: left; }
     .schedule-add-control > .ui.dropdown .menu > .item:hover,
     .schedule-add-control > .ui.dropdown .menu > .selected.item { color: var(--foreground); background: var(--raised-surface); }
     .schedule-add-control > .ui.dropdown .menu > .item > span { display: grid; gap: .12rem; }
@@ -342,6 +343,8 @@
       header { align-items: stretch; flex-direction: column; }
       .header-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .theme-toggle { grid-column: 1 / -1; }
+      .header-actions .ui.button, .ui.card.plug-card .ui.button, .device-pane .ui.button, .confirmation-dialog .ui.button { min-height: 44px; }
+      .remove-device { min-width: 44px; }
       .plug-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .device-pane-resizer { display: none; }
       .week-calendar { padding: .75rem; }
@@ -615,11 +618,23 @@
 
     function initializeSemanticControls(root) {
       $(root).find(".schedule-add-dropdown").dropdown({
-        action: "hide",
-        onChange: function (value) {
-          if (value) openAddSchedule(value);
-        }
+        action: "hide"
       });
+      root.addEventListener("click", function (event) {
+        const item = event.target.closest(".schedule-add-menu [data-value]");
+        if (!item) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openAddSchedule(item.dataset.value);
+      }, true);
+      root.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const item = event.target.closest(".schedule-add-menu [data-value]");
+        if (!item) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openAddSchedule(item.dataset.value);
+      }, true);
     }
 
     function setCalendarView(button, view) {
@@ -737,6 +752,7 @@
       $(control.querySelector(".schedule-add-dropdown")).dropdown("hide");
       form.open = true;
       form.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      form.querySelector("input, select, button")?.focus({ preventScroll: true });
     }
 
     document.body.addEventListener("click", function (event) {
