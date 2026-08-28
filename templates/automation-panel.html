@@ -10,69 +10,6 @@
 
   <p class="automation-intro">All schedules below are stored and evaluated by this server every five minutes. If several rules apply together, the most recently added rule wins.</p>
 
-  <section class="ui fluid card weather-card">
-    <div class="content">
-      <div class="weather-header">
-        <h3 class="header">Current conditions</h3>
-        <button class="ui mini button small-button" type="button" hx-get="/plugs/{{ panel.address }}/automations" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="sync alternate icon" aria-hidden="true"></i>Refresh</button>
-      </div>
-      {% if panel.weather %}
-        <dl class="weather-grid">
-          <div><dt>Local time</dt><dd>{{ panel.weather.local_time }} {{ panel.weather.timezone }}</dd></div>
-          <div><dt>Daylight</dt><dd>{% if panel.weather.is_day %}Day{% else %}Night{% endif %}</dd></div>
-          <div><dt>Weather</dt><dd>{{ panel.weather.condition }}</dd></div>
-          <div><dt>Light level</dt><dd>{{ panel.weather.shortwave_radiation }} W/m²</dd></div>
-          <div><dt>Cloud cover</dt><dd>{{ panel.weather.cloud_cover }}%</dd></div>
-          <div><dt>Temperature</dt><dd>{{ panel.weather.temperature }} °C</dd></div>
-          <div><dt>Feels like</dt><dd>{{ panel.weather.apparent_temperature }} °C</dd></div>
-          <div><dt>Precipitation</dt><dd>{{ panel.weather.precipitation }} mm</dd></div>
-          <div><dt>Sunrise</dt><dd>{{ panel.weather.sunrise }}</dd></div>
-          <div><dt>Sunset</dt><dd>{{ panel.weather.sunset }}</dd></div>
-        </dl>
-        {% if panel.weather.previous_day_light %}
-          {% set history = panel.weather.previous_day_light %}
-          <figure class="light-chart">
-          <figcaption>
-            <strong>Yesterday's outdoor light</strong>
-            <span>Hourly shortwave radiation (W/m²)</span>
-          </figcaption>
-          <svg viewBox="0 0 320 148" role="img" aria-label="Yesterday's hourly outdoor light levels, with sunrise and sunset marked">
-            <line class="chart-grid" x1="40" y1="12" x2="312" y2="12"></line>
-            <line class="chart-grid" x1="40" y1="66" x2="312" y2="66"></line>
-            <line class="chart-axis" x1="40" y1="120" x2="312" y2="120"></line>
-            <text class="chart-label" x="36" y="15" text-anchor="end">{{ history.max_radiation }}</text>
-            <text class="chart-label" x="36" y="69" text-anchor="end">{{ history.mid_radiation }}</text>
-            <text class="chart-label" x="36" y="123" text-anchor="end">0</text>
-            <text class="chart-label" x="40" y="138" text-anchor="middle">12 AM</text>
-            <text class="chart-label" x="108" y="138" text-anchor="middle">6 AM</text>
-            <text class="chart-label" x="176" y="138" text-anchor="middle">12 PM</text>
-            <text class="chart-label" x="244" y="138" text-anchor="middle">6 PM</text>
-            <text class="chart-label" x="312" y="138" text-anchor="middle">12 AM</text>
-            <line class="solar-line sunrise-line" x1="{{ history.sunrise_x }}" y1="12" x2="{{ history.sunrise_x }}" y2="120"></line>
-            <line class="solar-line sunset-line" x1="{{ history.sunset_x }}" y1="12" x2="{{ history.sunset_x }}" y2="120"></line>
-            <polyline class="light-average-line" points="{% for point in history.average_points %}{{ point.x }},{{ point.y }} {% endfor %}">
-              <title>{{ history.average_days }}-day hourly average</title>
-            </polyline>
-            <polyline class="light-line" points="{% for point in history.points %}{{ point.x }},{{ point.y }} {% endfor %}"></polyline>
-            {% for point in history.points %}
-              <circle class="light-point" cx="{{ point.x }}" cy="{{ point.y }}" r="2.5">
-                <title>{{ point.time }} — {{ point.radiation }} W/m²</title>
-              </circle>
-            {% endfor %}
-          </svg>
-          <div class="chart-legend">
-            <span><i class="light-average-key"></i>{{ history.average_days }}-day hourly average</span>
-            <span><i class="sunrise-key"></i>Sunrise {{ history.sunrise }}</span>
-            <span><i class="sunset-key"></i>Sunset {{ history.sunset }}</span>
-          </div>
-          </figure>
-        {% endif %}
-      {% else %}
-        <p class="description schedule-status">Current weather is unavailable.</p>
-      {% endif %}
-    </div>
-  </section>
-
   {% if panel.calendar %}
     <section class="ui segment week-calendar" data-calendar-view="state" data-automation-base="/plugs/{{ panel.address }}/automations" aria-labelledby="week-calendar-title">
       <div class="week-calendar-header">
@@ -374,6 +311,75 @@
   {% else %}
     <p class="advanced-note">Configure this plug's location in the Kasa app before adding server schedules.</p>
   {% endif %}
+
+  <details class="conditions-disclosure">
+    <summary>
+      <span>Conditions and light history</span>
+      {% if panel.weather %}<small>{{ panel.weather.condition }} · {{ panel.weather.temperature }} °C · {{ panel.weather.shortwave_radiation }} W/m²</small>{% endif %}
+    </summary>
+    <section class="ui fluid card weather-card">
+      <div class="content">
+        <div class="weather-header">
+          <h3 class="header">Current conditions</h3>
+          <button class="ui mini button small-button" type="button" hx-get="/plugs/{{ panel.address }}/automations" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="sync alternate icon" aria-hidden="true"></i>Refresh</button>
+        </div>
+        {% if panel.weather %}
+          <dl class="weather-grid">
+            <div><dt>Local time</dt><dd>{{ panel.weather.local_time }} {{ panel.weather.timezone }}</dd></div>
+            <div><dt>Daylight</dt><dd>{% if panel.weather.is_day %}Day{% else %}Night{% endif %}</dd></div>
+            <div><dt>Weather</dt><dd>{{ panel.weather.condition }}</dd></div>
+            <div><dt>Light level</dt><dd>{{ panel.weather.shortwave_radiation }} W/m²</dd></div>
+            <div><dt>Cloud cover</dt><dd>{{ panel.weather.cloud_cover }}%</dd></div>
+            <div><dt>Temperature</dt><dd>{{ panel.weather.temperature }} °C</dd></div>
+            <div><dt>Feels like</dt><dd>{{ panel.weather.apparent_temperature }} °C</dd></div>
+            <div><dt>Precipitation</dt><dd>{{ panel.weather.precipitation }} mm</dd></div>
+            <div><dt>Sunrise</dt><dd>{{ panel.weather.sunrise }}</dd></div>
+            <div><dt>Sunset</dt><dd>{{ panel.weather.sunset }}</dd></div>
+          </dl>
+          {% if panel.weather.previous_day_light %}
+            {% set history = panel.weather.previous_day_light %}
+            <figure class="light-chart">
+            <figcaption>
+              <strong>Yesterday's outdoor light</strong>
+              <span>Hourly shortwave radiation (W/m²)</span>
+            </figcaption>
+            <svg viewBox="0 0 320 148" role="img" aria-label="Yesterday's hourly outdoor light levels, with sunrise and sunset marked">
+              <line class="chart-grid" x1="40" y1="12" x2="312" y2="12"></line>
+              <line class="chart-grid" x1="40" y1="66" x2="312" y2="66"></line>
+              <line class="chart-axis" x1="40" y1="120" x2="312" y2="120"></line>
+              <text class="chart-label" x="36" y="15" text-anchor="end">{{ history.max_radiation }}</text>
+              <text class="chart-label" x="36" y="69" text-anchor="end">{{ history.mid_radiation }}</text>
+              <text class="chart-label" x="36" y="123" text-anchor="end">0</text>
+              <text class="chart-label" x="40" y="138" text-anchor="middle">12 AM</text>
+              <text class="chart-label" x="108" y="138" text-anchor="middle">6 AM</text>
+              <text class="chart-label" x="176" y="138" text-anchor="middle">12 PM</text>
+              <text class="chart-label" x="244" y="138" text-anchor="middle">6 PM</text>
+              <text class="chart-label" x="312" y="138" text-anchor="middle">12 AM</text>
+              <line class="solar-line sunrise-line" x1="{{ history.sunrise_x }}" y1="12" x2="{{ history.sunrise_x }}" y2="120"></line>
+              <line class="solar-line sunset-line" x1="{{ history.sunset_x }}" y1="12" x2="{{ history.sunset_x }}" y2="120"></line>
+              <polyline class="light-average-line" points="{% for point in history.average_points %}{{ point.x }},{{ point.y }} {% endfor %}">
+                <title>{{ history.average_days }}-day hourly average</title>
+              </polyline>
+              <polyline class="light-line" points="{% for point in history.points %}{{ point.x }},{{ point.y }} {% endfor %}"></polyline>
+              {% for point in history.points %}
+                <circle class="light-point" cx="{{ point.x }}" cy="{{ point.y }}" r="2.5">
+                  <title>{{ point.time }} — {{ point.radiation }} W/m²</title>
+                </circle>
+              {% endfor %}
+            </svg>
+            <div class="chart-legend">
+              <span><i class="light-average-key"></i>{{ history.average_days }}-day hourly average</span>
+              <span><i class="sunrise-key"></i>Sunrise {{ history.sunrise }}</span>
+              <span><i class="sunset-key"></i>Sunset {{ history.sunset }}</span>
+            </div>
+            </figure>
+          {% endif %}
+        {% else %}
+          <p class="description schedule-status">Current weather is unavailable.</p>
+        {% endif %}
+      </div>
+    </section>
+  </details>
 
   {% if panel.schedules.rules %}
     <section class="plug-migration">

@@ -3060,6 +3060,11 @@ mod tests {
         assert!(fragment.contains("class=\"solar-line sunrise-line\" x1=\"114.8\""));
         assert!(fragment.contains("Sunrise 6:36 AM"));
         assert!(fragment.contains("Sunset 8:18 PM"));
+        assert!(fragment.contains("<details class=\"conditions-disclosure\">"));
+        assert!(
+            fragment.find("This week").unwrap()
+                < fragment.find("Conditions and light history").unwrap()
+        );
         assert!(fragment.contains("id=\"week-calendar-title\">This week"));
         assert!(fragment.contains("Times shown in GMT-4"));
         assert!(fragment.contains("data-calendar-view=\"state\""));
