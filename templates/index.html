@@ -98,7 +98,7 @@
     button:hover { transform: translateY(-1px); }
     button:disabled { opacity: .55; }
     button:focus-visible, .ui.button:focus-visible, summary:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #7dd3fc; outline-offset: 2px; }
-    .scan, .theme-toggle, .install-app { color: var(--foreground); background: var(--control-surface); white-space: nowrap; }
+    .scan, .theme-toggle, .install-app, .activity-button { color: var(--foreground); background: var(--control-surface); white-space: nowrap; }
     .install-app { color: #fff; background: #0369a1; }
     .add-group { color: #fff; background: #2563eb; }
     .device-list, .device-section { display: grid; gap: 1rem; }
@@ -155,6 +155,17 @@
     .pane-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
     .pane-header h2 { margin: 0; font-size: 1.3rem; }
     .pane-close { padding: .35rem .7rem; color: var(--subtle-foreground); background: var(--control-surface); font-size: 1.4rem; line-height: 1; }
+    .event-refresh { margin-bottom: 1rem !important; color: var(--subtle-foreground) !important; background: var(--control-surface) !important; }
+    .event-list { display: grid; gap: .75rem; margin: 0; padding: 0; list-style: none; }
+    .event-item { padding: .9rem; border: 1px solid var(--border); border-radius: .7rem; background: var(--detail-surface); }
+    .event-item p { margin: .55rem 0 0; line-height: 1.45; }
+    .event-meta { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--muted); font-size: .72rem; }
+    .event-source { border-radius: 999px; padding: .2rem .5rem; color: #eff6ff; background: #475569; font-weight: 800; text-transform: uppercase; }
+    .event-source-automation { color: #f5f3ff; background: #6d28d9; }
+    .event-meta time { text-align: right; }
+    .event-empty { display: grid; justify-items: center; gap: .5rem; padding: 3rem 1rem; color: var(--muted); text-align: center; }
+    .event-empty i { margin: 0 !important; font-size: 2rem; }
+    .event-empty strong { color: var(--foreground); font-size: 1rem; }
     .schedule-header, .schedule-summary, .schedule-actions { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
     .schedule-header h3 { margin: 0; font-size: 1rem; }
     .schedule-status { color: var(--muted); font-size: .8rem; }
@@ -417,6 +428,10 @@
       </div>
       <div class="header-actions">
         <button class="ui basic button install-app" type="button" hidden><i class="download icon" aria-hidden="true"></i>Install app</button>
+        <button class="ui basic button activity-button" type="button" hx-get="/events" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+          <i class="history icon" aria-hidden="true"></i>
+          <span class="button-label">Activity</span>
+        </button>
         <button class="ui basic button theme-toggle" type="button">
           <i class="adjust icon" aria-hidden="true"></i>
           <span class="theme-label">Switch to dark theme</span>
@@ -532,6 +547,17 @@
       currentNotification.hidden = false;
     }
 
+    function formatEventTimes(root) {
+      root.querySelectorAll("time[data-event-time]").forEach(function (element) {
+        const date = new Date(Number(element.dataset.eventTime) * 1000);
+        element.dateTime = date.toISOString();
+        element.textContent = new Intl.DateTimeFormat(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short"
+        }).format(date);
+      });
+    }
+
     function requestConfirmation(message, action) {
       confirmationDialog.querySelector(".confirmation-message").textContent = message;
       confirmationDialog.returnValue = "";
@@ -573,6 +599,7 @@
         restorePaneWidth(pane);
         pane.showModal();
         initializeSemanticControls(pane);
+        formatEventTimes(pane);
         pane.querySelectorAll(".light-rule-form").forEach(updateLightRuleForm);
       }
     });

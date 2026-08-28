@@ -417,6 +417,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     tokio::spawn(purge_weather_history(database));
     let app = Router::new()
         .route("/", get(index))
+        .route("/events", get(get_events))
         .route("/favicon.ico", get(favicon))
         .route("/manifest.webmanifest", get(web_manifest))
         .route("/service-worker.js", get(service_worker))
@@ -531,6 +532,15 @@ async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppEr
     Ok(Html(page))
 }
 
+async fn get_events(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
+    let events = state.database.recent_events(100).map_err(database_error)?;
+    let fragment = state
+        .templates
+        .get_template("event-panel.html")?
+        .render(context! { events })?;
+    Ok(Html(fragment))
+}
+
 async fn favicon() -> Response {
     static_response(
         "image/x-icon",
@@ -636,12 +646,20 @@ async fn set_relay(
     Path(address): Path<IpAddr>,
     Form(form): Form<RelayForm>,
 ) -> Result<Html<String>, AppError> {
+    let target = device_label(&state, address);
     let client = state.client.clone();
     let on = form.on;
     task::spawn_blocking(move || client.set_relay(address, on)).await??;
     state
         .database
         .update_relay(address, on)
+        .map_err(database_error)?;
+    state
+        .database
+        .record_event(
+            "Manual",
+            &format!("Turned “{target}” {}.", if on { "on" } else { "off" }),
+        )
         .map_err(database_error)?;
     render_device_list(&state, load_device_list(&state, None)?)
 }
@@ -651,12 +669,20 @@ async fn set_brightness(
     Path(address): Path<IpAddr>,
     Form(form): Form<BrightnessForm>,
 ) -> Result<Html<String>, AppError> {
+    let target = device_label(&state, address);
     let client = state.client.clone();
     let brightness = form.brightness;
     task::spawn_blocking(move || client.set_brightness(address, brightness)).await??;
     state
         .database
         .update_brightness(address, brightness)
+        .map_err(database_error)?;
+    state
+        .database
+        .record_event(
+            "Manual",
+            &format!("Set “{target}” brightness to {brightness}%."),
+        )
         .map_err(database_error)?;
     render_device_list(&state, load_device_list(&state, None)?)
 }
@@ -810,6 +836,10 @@ async fn set_group_relay(
     let offline = group.device_ids.len().saturating_sub(reachable_count);
     let unavailable = offline + failed;
     let notice = group_relay_notice(&group.name, form.on, controlled.len(), unavailable);
+    state
+        .database
+        .record_event("Manual", &notice)
+        .map_err(database_error)?;
     render_device_list(&state, load_device_list(&state, Some(notice))?)
 }
 
@@ -1167,6 +1197,20 @@ async fn scan_for_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
 
 fn remembered_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
     state.database.devices().map_err(database_error)
+}
+
+fn device_label(state: &AppState, address: IpAddr) -> String {
+    state
+        .database
+        .devices()
+        .ok()
+        .and_then(|devices| {
+            devices
+                .into_iter()
+                .find(|device| device.address == address)
+                .map(|device| device.alias)
+        })
+        .unwrap_or_else(|| address.to_string())
 }
 
 fn load_device_list(state: &AppState, notice: Option<String>) -> Result<DeviceListView, AppError> {
@@ -2646,6 +2690,10 @@ fn templates() -> Result<Environment<'static>, minijinja::Error> {
     templates.add_template(
         "countdown-panel.html",
         include_str!("../templates/countdown-panel.html"),
+    )?;
+    templates.add_template(
+        "event-panel.html",
+        include_str!("../templates/event-panel.html"),
     )?;
     Ok(templates)
 }

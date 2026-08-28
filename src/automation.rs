@@ -322,12 +322,12 @@ impl AutomationEngine {
             }
             for device_id in target_device_ids {
                 if plugs.contains_key(&device_id) {
-                    device_evaluations.insert(device_id, evaluation.turn_on);
+                    device_evaluations.insert(device_id, (evaluation.turn_on, rule.name.clone()));
                 }
             }
         }
 
-        for (device_id, turn_on) in device_evaluations {
+        for (device_id, (turn_on, rule_name)) in device_evaluations {
             let plug = &plugs[&device_id];
             if plug.relay_on == turn_on {
                 continue;
@@ -336,6 +336,21 @@ impl AutomationEngine {
             let address = plug.address;
             tokio::task::spawn_blocking(move || control_client.set_relay(address, turn_on))
                 .await??;
+            self.database.update_relay(address, turn_on)?;
+            let rule_detail = if rule_name.is_empty() {
+                String::new()
+            } else {
+                format!(" using “{rule_name}”")
+            };
+            self.database.record_event(
+                "Automation",
+                &format!(
+                    "Turned “{}” {}{}.",
+                    plug.alias,
+                    if turn_on { "on" } else { "off" },
+                    rule_detail
+                ),
+            )?;
         }
 
         if !triggered_timed_rules.is_empty() {

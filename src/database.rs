@@ -18,6 +18,13 @@ pub struct Database {
     connection: Mutex<Connection>,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct EventRecord {
+    pub occurred_at: i64,
+    pub source: String,
+    pub message: String,
+}
+
 pub struct WeatherObservation {
     pub latitude: i32,
     pub longitude: i32,
@@ -104,10 +111,19 @@ impl Database {
                  PRIMARY KEY (latitude, longitude, observed_at)
              );
 
+             CREATE TABLE IF NOT EXISTS events (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 occurred_at INTEGER NOT NULL,
+                 source TEXT NOT NULL,
+                 message TEXT NOT NULL
+             );
+
              CREATE INDEX IF NOT EXISTS automations_device_id
                  ON automations(device_id);
              CREATE INDEX IF NOT EXISTS open_meteo_history_fetched_at
-                 ON open_meteo_history(fetched_at);",
+                 ON open_meteo_history(fetched_at);
+             CREATE INDEX IF NOT EXISTS events_occurred_at
+                 ON events(occurred_at DESC, id DESC);",
         )?;
         let automation_columns = connection
             .prepare("PRAGMA table_info(automations)")?
@@ -327,6 +343,37 @@ impl Database {
         })
     }
 
+    pub fn record_event(&self, source: &str, message: &str) -> Result<()> {
+        let occurred_at = unix_timestamp()?;
+        self.with_connection(|connection| {
+            connection.execute(
+                "INSERT INTO events (occurred_at, source, message) VALUES (?1, ?2, ?3)",
+                rusqlite::params![occurred_at, source, message],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn recent_events(&self, limit: usize) -> Result<Vec<EventRecord>> {
+        let limit = i64::try_from(limit)?;
+        self.with_connection(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT occurred_at, source, message
+                 FROM events ORDER BY occurred_at DESC, id DESC LIMIT ?1",
+            )?;
+            let events = statement
+                .query_map([limit], |row| {
+                    Ok(EventRecord {
+                        occurred_at: row.get(0)?,
+                        source: row.get(1)?,
+                        message: row.get(2)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(events)
+        })
+    }
+
     pub fn record_weather(&self, observation: &WeatherObservation) -> Result<()> {
         let fetched_at = unix_timestamp()?;
         self.with_connection(|connection| {
@@ -452,6 +499,19 @@ mod tests {
         assert!(database.remove_device("device-1").unwrap());
         assert!(!database.remove_device("device-1").unwrap());
         assert!(database.devices().unwrap().is_empty());
+    }
+
+    #[test]
+    fn events_are_returned_newest_first_and_limited() {
+        let database = Database::open(":memory:").unwrap();
+        database.record_event("Manual", "First event").unwrap();
+        database.record_event("Automation", "Second event").unwrap();
+
+        let events = database.recent_events(1).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].source, "Automation");
+        assert_eq!(events[0].message, "Second event");
+        assert!(events[0].occurred_at > 0);
     }
 
     #[test]
