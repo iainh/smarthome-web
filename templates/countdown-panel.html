@@ -24,18 +24,20 @@
   {% endfor %}
 
   <form class="ui form schedule-form" hx-post="/plugs/{{ panel.address }}/countdown" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
-    <label>After
-      <div class="form-row">
-        <input name="minutes" type="number" min="1" max="1440" required value="30">
-        <span>minutes</span>
+    <div class="field">
+      <label for="countdown-minutes">After</label>
+      <div class="ui right labeled input">
+        <input id="countdown-minutes" name="minutes" type="number" min="1" max="1440" required value="30">
+        <div class="ui basic label">minutes</div>
       </div>
-    </label>
-    <label>Action
-      <select name="action">
+    </div>
+    <div class="field">
+      <label for="countdown-action">Action</label>
+      <select id="countdown-action" name="action">
         <option value="off">Turn off</option>
         <option value="on">Turn on</option>
       </select>
-    </label>
+    </div>
     <button class="ui primary button small-button" type="submit"><i class="clock outline icon" aria-hidden="true"></i>Start timer</button>
   </form>
 </dialog>

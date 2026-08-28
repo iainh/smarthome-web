@@ -89,11 +89,11 @@
         <summary>Edit schedule</summary>
         {% if rule.kind == "fixed" %}
           <form class="ui form schedule-form" hx-post="/plugs/{{ panel.address }}/automations/{{ rule.id }}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
-            <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
-            <label>Time<input name="time" type="time" required value="{{ rule.time }}"></label>
-            <label>Action<select name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></label>
+            <div class="field"><label for="fixed-name-{{ rule.id }}">Name</label><input id="fixed-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
+            <div class="field"><label for="fixed-time-{{ rule.id }}">Time</label><input id="fixed-time-{{ rule.id }}" name="time" type="time" required value="{{ rule.time }}"></div>
+            <div class="field"><label for="fixed-action-{{ rule.id }}">Action</label><select id="fixed-action-{{ rule.id }}" name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></div>
             <p class="schedule-action-help">This changes the plug’s state until another schedule or manual action changes it.</p>
-            <div class="weekdays">
+            <div class="field weekdays">
               <label class="weekday"><input type="checkbox" name="sun"{% if rule.sun %} checked{% endif %}>Sun</label>
               <label class="weekday"><input type="checkbox" name="mon"{% if rule.mon %} checked{% endif %}>Mon</label>
               <label class="weekday"><input type="checkbox" name="tue"{% if rule.tue %} checked{% endif %}>Tue</label>
@@ -106,12 +106,12 @@
           </form>
         {% elif rule.kind == "solar" %}
           <form class="ui form schedule-form" hx-post="/plugs/{{ panel.address }}/automations/{{ rule.id }}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
-            <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
-            <label>Event<select name="event"><option value="sunrise"{% if rule.event == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.event == "sunset" %} selected{% endif %}>Sunset</option></select></label>
-            <label>Offset in minutes<input name="offset_minutes" type="number" min="-180" max="180" required value="{{ rule.offset_minutes }}"></label>
-            <label>Action<select name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></label>
+            <div class="field"><label for="solar-name-{{ rule.id }}">Name</label><input id="solar-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
+            <div class="field"><label for="solar-event-{{ rule.id }}">Event</label><select id="solar-event-{{ rule.id }}" name="event"><option value="sunrise"{% if rule.event == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.event == "sunset" %} selected{% endif %}>Sunset</option></select></div>
+            <div class="field"><label for="solar-offset-{{ rule.id }}">Offset in minutes</label><input id="solar-offset-{{ rule.id }}" name="offset_minutes" type="number" min="-180" max="180" required value="{{ rule.offset_minutes }}"></div>
+            <div class="field"><label for="solar-action-{{ rule.id }}">Action</label><select id="solar-action-{{ rule.id }}" name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></div>
             <p class="schedule-action-help">This changes the plug’s state until another schedule or manual action changes it.</p>
-            <div class="weekdays">
+            <div class="field weekdays">
               <label class="weekday"><input type="checkbox" name="sun"{% if rule.sun %} checked{% endif %}>Sun</label>
               <label class="weekday"><input type="checkbox" name="mon"{% if rule.mon %} checked{% endif %}>Mon</label>
               <label class="weekday"><input type="checkbox" name="tue"{% if rule.tue %} checked{% endif %}>Tue</label>
@@ -124,32 +124,32 @@
           </form>
         {% else %}
           <form class="ui form schedule-form light-rule-form" hx-post="/plugs/{{ panel.address }}/automations/{{ rule.id }}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
-            <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
-            <div class="form-row">
-              <label>Turn on at or below<span class="unit-input"><input name="on_below" type="number" min="0" max="1499" step="1" required value="{{ rule.on_below }}"><span>W/m²</span></span></label>
-              <label>Turn off at or above<span class="unit-input"><input name="off_above" type="number" min="1" max="1500" step="1" required value="{{ rule.off_above }}" aria-describedby="threshold-error-{{ rule.id }}"><span>W/m²</span></span></label>
+            <div class="field"><label for="light-name-{{ rule.id }}">Name</label><input id="light-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
+            <div class="two fields form-row">
+              <div class="field"><label for="light-on-below-{{ rule.id }}">Turn on at or below</label><span class="unit-input"><input id="light-on-below-{{ rule.id }}" name="on_below" type="number" min="0" max="1499" step="1" required value="{{ rule.on_below }}"><span>W/m²</span></span></div>
+              <div class="field"><label for="light-off-above-{{ rule.id }}">Turn off at or above</label><span class="unit-input"><input id="light-off-above-{{ rule.id }}" name="off_above" type="number" min="1" max="1500" step="1" required value="{{ rule.off_above }}" aria-describedby="threshold-error-{{ rule.id }}"><span>W/m²</span></span></div>
             </div>
             <p id="threshold-error-{{ rule.id }}" class="form-error threshold-error" role="alert" hidden>Turn-off threshold must be greater than the turn-on threshold.</p>
-            <label class="window-toggle"><input type="checkbox" name="window_enabled"{% if rule.window_enabled %} checked{% endif %}>Only control during an active window</label>
+            <div class="field"><label class="window-toggle"><input type="checkbox" name="window_enabled"{% if rule.window_enabled %} checked{% endif %}>Only control during an active window</label></div>
             <div class="window-flow">
               <div class="boundary-card" data-boundary="start">
                 <strong>Start</strong>
-                <label>Boundary<select class="boundary-kind" name="start_kind"><option value="fixed"{% if rule.start_kind == "fixed" %} selected{% endif %}>Fixed time</option><option value="sunrise"{% if rule.start_kind == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.start_kind == "sunset" %} selected{% endif %}>Sunset</option></select></label>
-                <label class="boundary-time-control">Time<input name="start_time" type="time" required value="{{ rule.start_time }}"></label>
-                <label class="boundary-offset-control">Offset in minutes<input name="start_offset_minutes" type="number" min="-180" max="180" required value="{{ rule.start_offset_minutes }}"></label>
+                <div class="field"><label for="light-start-kind-{{ rule.id }}">Boundary</label><select id="light-start-kind-{{ rule.id }}" class="boundary-kind" name="start_kind"><option value="fixed"{% if rule.start_kind == "fixed" %} selected{% endif %}>Fixed time</option><option value="sunrise"{% if rule.start_kind == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.start_kind == "sunset" %} selected{% endif %}>Sunset</option></select></div>
+                <div class="field boundary-time-control"><label for="light-start-time-{{ rule.id }}">Time</label><input id="light-start-time-{{ rule.id }}" name="start_time" type="time" required value="{{ rule.start_time }}"></div>
+                <div class="field boundary-offset-control"><label for="light-start-offset-{{ rule.id }}">Offset in minutes</label><input id="light-start-offset-{{ rule.id }}" name="start_offset_minutes" type="number" min="-180" max="180" required value="{{ rule.start_offset_minutes }}"></div>
               </div>
               <span class="window-arrow" aria-hidden="true">→</span>
               <div class="boundary-card" data-boundary="end">
                 <strong>End</strong>
-                <label>Boundary<select class="boundary-kind" name="end_kind"><option value="fixed"{% if rule.end_kind == "fixed" %} selected{% endif %}>Fixed time</option><option value="sunrise"{% if rule.end_kind == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.end_kind == "sunset" %} selected{% endif %}>Sunset</option></select></label>
-                <label class="boundary-time-control">Time<input name="end_time" type="time" required value="{{ rule.end_time }}"></label>
-                <label class="boundary-offset-control">Offset in minutes<input name="end_offset_minutes" type="number" min="-180" max="180" required value="{{ rule.end_offset_minutes }}"></label>
+                <div class="field"><label for="light-end-kind-{{ rule.id }}">Boundary</label><select id="light-end-kind-{{ rule.id }}" class="boundary-kind" name="end_kind"><option value="fixed"{% if rule.end_kind == "fixed" %} selected{% endif %}>Fixed time</option><option value="sunrise"{% if rule.end_kind == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.end_kind == "sunset" %} selected{% endif %}>Sunset</option></select></div>
+                <div class="field boundary-time-control"><label for="light-end-time-{{ rule.id }}">Time</label><input id="light-end-time-{{ rule.id }}" name="end_time" type="time" required value="{{ rule.end_time }}"></div>
+                <div class="field boundary-offset-control"><label for="light-end-offset-{{ rule.id }}">Offset in minutes</label><input id="light-end-offset-{{ rule.id }}" name="end_offset_minutes" type="number" min="-180" max="180" required value="{{ rule.end_offset_minutes }}"></div>
               </div>
             </div>
             <p class="window-preview" aria-live="polite"></p>
             <div class="outside-window-options">
-              <label class="radio-card"><input type="radio" name="outside_window" value="turn_off"{% if rule.outside_turn_off %} checked{% endif %}><span><strong>Turn the plug off outside the window</strong></span></label>
-              <label class="radio-card"><input type="radio" name="outside_window" value="stop_controlling"{% if not rule.outside_turn_off %} checked{% endif %}><span><strong>Stop controlling outside the window</strong></span></label>
+              <div class="field"><label class="radio-card"><input type="radio" name="outside_window" value="turn_off"{% if rule.outside_turn_off %} checked{% endif %}><span><strong>Turn the plug off outside the window</strong></span></label></div>
+              <div class="field"><label class="radio-card"><input type="radio" name="outside_window" value="stop_controlling"{% if not rule.outside_turn_off %} checked{% endif %}><span><strong>Stop controlling outside the window</strong></span></label></div>
             </div>
             <button class="ui primary button small-button" type="submit"><i class="save outline icon" aria-hidden="true"></i>Save changes</button>
           </form>
@@ -160,14 +160,14 @@
 
   {% if panel.location_available %}
     <div class="schedule-add-control">
-      <div class="ui primary floating dropdown button schedule-add-dropdown schedule-add-button" role="button" aria-label="Add schedule" aria-haspopup="menu" aria-controls="schedule-add-menu">
+      <div class="ui primary floating dropdown button schedule-add-dropdown schedule-add-button" role="button" tabindex="0" aria-label="Add schedule" aria-haspopup="menu" aria-controls="schedule-add-menu">
         <i class="plus icon" aria-hidden="true"></i>
         <span class="text">Add schedule</span>
         <i class="dropdown icon" aria-hidden="true"></i>
         <div id="schedule-add-menu" class="menu schedule-add-menu" role="menu">
-          <button class="item" type="button" role="menuitem" data-value="add-fixed-schedule"><i class="clock outline icon" aria-hidden="true"></i><span><strong>Fixed time</strong><small>Run at a chosen time</small></span></button>
-          <button class="item" type="button" role="menuitem" data-value="add-solar-schedule"><i class="sun outline icon" aria-hidden="true"></i><span><strong>Sunrise or sunset</strong><small>Follow local daylight</small></span></button>
-          <button class="item" type="button" role="menuitem" data-value="add-light-schedule"><i class="lightbulb outline icon" aria-hidden="true"></i><span><strong>Outdoor light</strong><small>React to measured light</small></span></button>
+          <div class="item" role="menuitem" data-value="add-fixed-schedule"><i class="clock outline icon" aria-hidden="true"></i><span><strong>Fixed time</strong><small>Run at a chosen time</small></span></div>
+          <div class="item" role="menuitem" data-value="add-solar-schedule"><i class="sun outline icon" aria-hidden="true"></i><span><strong>Sunrise or sunset</strong><small>Follow local daylight</small></span></div>
+          <div class="item" role="menuitem" data-value="add-light-schedule"><i class="lightbulb outline icon" aria-hidden="true"></i><span><strong>Outdoor light</strong><small>React to measured light</small></span></div>
         </div>
       </div>
       <div class="schedule-add-forms">
@@ -175,16 +175,17 @@
       <summary>Add fixed-time schedule</summary>
       <h3 class="schedule-add-title">Add fixed-time schedule</h3>
       <form class="ui form schedule-form" hx-post="/plugs/{{ panel.address }}/automations/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
-        <label>Name<input name="name" maxlength="64" required placeholder="Weekday morning"></label>
-        <label>Time<input name="time" type="time" required value="07:00"></label>
-        <label>Action
-          <select name="action">
+        <div class="field"><label for="new-fixed-name">Name</label><input id="new-fixed-name" name="name" maxlength="64" required placeholder="Weekday morning"></div>
+        <div class="field"><label for="new-fixed-time">Time</label><input id="new-fixed-time" name="time" type="time" required value="07:00"></div>
+        <div class="field">
+          <label for="new-fixed-action">Action</label>
+          <select id="new-fixed-action" name="action">
             <option value="on">Turn on</option>
             <option value="off">Turn off</option>
           </select>
-        </label>
+        </div>
         <p class="schedule-action-help">This changes the plug’s state until another schedule or manual action changes it.</p>
-        <div class="weekdays">
+        <div class="field weekdays">
           <label class="weekday"><input type="checkbox" name="sun">Sun</label>
           <label class="weekday"><input type="checkbox" name="mon" checked>Mon</label>
           <label class="weekday"><input type="checkbox" name="tue" checked>Tue</label>
@@ -201,25 +202,28 @@
       <summary>Add sunrise or sunset schedule</summary>
       <h3 class="schedule-add-title">Add sunrise or sunset schedule</h3>
       <form class="ui form schedule-form" hx-post="/plugs/{{ panel.address }}/automations/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
-        <label>Name<input name="name" maxlength="64" required placeholder="Evening lights"></label>
-        <label>Event
-          <select name="event">
+        <div class="field"><label for="new-solar-name">Name</label><input id="new-solar-name" name="name" maxlength="64" required placeholder="Evening lights"></div>
+        <div class="field">
+          <label for="new-solar-event">Event</label>
+          <select id="new-solar-event" name="event">
             <option value="sunset">Sunset</option>
             <option value="sunrise">Sunrise</option>
           </select>
-        </label>
-        <label>Offset in minutes
-          <input name="offset_minutes" type="number" min="-180" max="180" required value="0">
+        </div>
+        <div class="field">
+          <label for="new-solar-offset">Offset in minutes</label>
+          <input id="new-solar-offset" name="offset_minutes" type="number" min="-180" max="180" required value="0">
           <span>Use a negative number for before the event.</span>
-        </label>
-        <label>Action
-          <select name="action">
+        </div>
+        <div class="field">
+          <label for="new-solar-action">Action</label>
+          <select id="new-solar-action" name="action">
             <option value="on">Turn on</option>
             <option value="off">Turn off</option>
           </select>
-        </label>
+        </div>
         <p class="schedule-action-help">This changes the plug’s state until another schedule or manual action changes it.</p>
-        <div class="weekdays">
+        <div class="field weekdays">
           <label class="weekday"><input type="checkbox" name="sun" checked>Sun</label>
           <label class="weekday"><input type="checkbox" name="mon" checked>Mon</label>
           <label class="weekday"><input type="checkbox" name="tue" checked>Tue</label>
@@ -237,17 +241,19 @@
       <h3 class="schedule-add-title">Add outdoor-light rule</h3>
       <form class="ui form schedule-form light-rule-form" hx-post="/plugs/{{ panel.address }}/automations/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
         <p class="light-rule-intro">Control the plug when daylight drops within a chosen time window.</p>
-        <label>Name<input name="name" maxlength="64" required value="Outdoor light"></label>
+        <div class="field"><label for="new-light-name">Name</label><input id="new-light-name" name="name" maxlength="64" required value="Outdoor light"></div>
 
         <fieldset class="ui segment rule-section">
           <legend>1. Light thresholds</legend>
-          <div class="form-row">
-            <label>Turn on at or below
-              <span class="unit-input"><input name="on_below" type="number" min="0" max="1499" step="1" required value="100"><span>W/m²</span></span>
-            </label>
-            <label>Turn off at or above
-              <span class="unit-input"><input name="off_above" type="number" min="1" max="1500" step="1" required value="125" aria-describedby="threshold-error-new"><span>W/m²</span></span>
-            </label>
+          <div class="two fields form-row">
+            <div class="field">
+              <label for="new-light-on-below">Turn on at or below</label>
+              <span class="unit-input"><input id="new-light-on-below" name="on_below" type="number" min="0" max="1499" step="1" required value="100"><span>W/m²</span></span>
+            </div>
+            <div class="field">
+              <label for="new-light-off-above">Turn off at or above</label>
+              <span class="unit-input"><input id="new-light-off-above" name="off_above" type="number" min="1" max="1500" step="1" required value="125" aria-describedby="threshold-error-new"><span>W/m²</span></span>
+            </div>
           </div>
           <p id="threshold-error-new" class="form-error threshold-error" role="alert" hidden>Turn-off threshold must be greater than the turn-on threshold.</p>
           <span class="schedule-status">The gap prevents rapid switching.</span>
@@ -260,40 +266,34 @@
 
         <fieldset class="ui segment rule-section">
           <legend>2. Active window</legend>
-          <label class="window-toggle"><input type="checkbox" name="window_enabled" checked>Only control during an active window</label>
+          <div class="field"><label class="window-toggle"><input type="checkbox" name="window_enabled" checked>Only control during an active window</label></div>
           <div class="window-flow">
             <div class="boundary-card" data-boundary="start">
               <strong>Start</strong>
-              <label>Boundary
-                <select class="boundary-kind" name="start_kind">
+              <div class="field">
+                <label for="new-light-start-kind">Boundary</label>
+                <select id="new-light-start-kind" class="boundary-kind" name="start_kind">
                   <option value="fixed" selected>Fixed time</option>
                   <option value="sunrise">Sunrise</option>
                   <option value="sunset">Sunset</option>
                 </select>
-              </label>
-              <label class="boundary-time-control">Time
-                <input name="start_time" type="time" required value="09:00">
-              </label>
-              <label class="boundary-offset-control" hidden>Offset in minutes
-                <input name="start_offset_minutes" type="number" min="-180" max="180" required value="0">
-              </label>
+              </div>
+              <div class="field boundary-time-control"><label for="new-light-start-time">Time</label><input id="new-light-start-time" name="start_time" type="time" required value="09:00"></div>
+              <div class="field boundary-offset-control" hidden><label for="new-light-start-offset">Offset in minutes</label><input id="new-light-start-offset" name="start_offset_minutes" type="number" min="-180" max="180" required value="0"></div>
             </div>
             <span class="window-arrow" aria-hidden="true">→</span>
             <div class="boundary-card" data-boundary="end">
               <strong>End</strong>
-              <label>Boundary
-                <select class="boundary-kind" name="end_kind">
+              <div class="field">
+                <label for="new-light-end-kind">Boundary</label>
+                <select id="new-light-end-kind" class="boundary-kind" name="end_kind">
                   <option value="fixed">Fixed time</option>
                   <option value="sunrise">Sunrise</option>
                   <option value="sunset" selected>Sunset</option>
                 </select>
-              </label>
-              <label class="boundary-time-control" hidden>Time
-                <input name="end_time" type="time" required value="17:00">
-              </label>
-              <label class="boundary-offset-control">Offset in minutes
-                <input name="end_offset_minutes" type="number" min="-180" max="180" required value="0">
-              </label>
+              </div>
+              <div class="field boundary-time-control" hidden><label for="new-light-end-time">Time</label><input id="new-light-end-time" name="end_time" type="time" required value="17:00"></div>
+              <div class="field boundary-offset-control"><label for="new-light-end-offset">Offset in minutes</label><input id="new-light-end-offset" name="end_offset_minutes" type="number" min="-180" max="180" required value="0"></div>
             </div>
           </div>
           <p class="window-preview" aria-live="polite">Active daily from <strong>9:00 AM</strong> until <strong>sunset{% if panel.weather %} (today: {{ panel.weather.sunset }}){% endif %}</strong>.</p>
@@ -305,8 +305,8 @@
 
         <fieldset class="ui segment rule-section outside-window-options">
           <legend>3. Outside this window</legend>
-          <label class="radio-card"><input type="radio" name="outside_window" value="turn_off" checked><span><strong>Turn the plug off</strong><small>Prevents a low-light state from leaving it on after the window ends.</small></span></label>
-          <label class="radio-card"><input type="radio" name="outside_window" value="stop_controlling"><span><strong>Stop controlling the plug</strong><small>Leave its current state unchanged.</small></span></label>
+          <div class="field"><label class="radio-card"><input type="radio" name="outside_window" value="turn_off" checked><span><strong>Turn the plug off</strong><small>Prevents a low-light state from leaving it on after the window ends.</small></span></label></div>
+          <div class="field"><label class="radio-card"><input type="radio" name="outside_window" value="stop_controlling"><span><strong>Stop controlling the plug</strong><small>Leave its current state unchanged.</small></span></label></div>
         </fieldset>
 
         <div class="light-rule-actions">

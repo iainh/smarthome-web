@@ -9,9 +9,10 @@
   </div>
 
   <form class="ui form schedule-form" hx-post="{% if panel.editing %}/groups/{{ panel.id }}{% else %}/groups{% endif %}" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button" hx-on::after-request="if(event.detail.successful) this.closest('dialog').close()">
-    <label>Group name
-      <input name="name" maxlength="64" required value="{{ panel.name }}" placeholder="Living room" autofocus>
-    </label>
+    <div class="field">
+      <label for="group-name">Group name</label>
+      <input id="group-name" name="name" maxlength="64" required value="{{ panel.name }}" placeholder="Living room" autofocus>
+    </div>
     <fieldset class="ui segment group-membership">
       <legend>Devices</legend>
       {% for device in panel.devices %}

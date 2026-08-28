@@ -163,6 +163,7 @@
     .device-pane details + details { margin-top: .65rem; }
     .device-pane summary { font-size: .9rem; }
     .schedule-form { display: grid; gap: .7rem; padding-top: .7rem; }
+    .ui.form.schedule-form > .field { margin: 0; }
     .schedule-form > .small-button { color: #fff; background: #2563eb; }
     .group-membership { display: grid; gap: .5rem; margin: 0; padding: .75rem; border: 1px solid var(--border); border-radius: .6rem; }
     .group-membership legend { padding: 0 .3rem; color: var(--subtle-foreground); font-size: .8rem; font-weight: 700; }
@@ -172,7 +173,8 @@
     .group-device small { color: var(--muted); }
     .group-device-offline { border: 1px solid #92400e; }
     .group-delete { width: 100%; margin-top: 1rem; }
-    .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+    .ui.form .fields.form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin: 0; }
+    .ui.form .fields.form-row > .field { width: auto; margin: 0; padding: 0; }
     label { display: grid; gap: .25rem; color: var(--muted); font-size: .75rem; }
     input, select { width: 100%; border: 1px solid var(--strong-border); border-radius: .45rem; padding: .5rem; color: var(--foreground); background: var(--input-surface); font: inherit; }
     .weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; }
@@ -327,6 +329,7 @@
     .device-pane .advanced-timing { margin: 0; padding: .6rem .7rem; background: var(--raised-surface); }
     .device-pane .advanced-timing p { margin: .5rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.4; }
     .outside-window-options { gap: .5rem; }
+    .ui.form .outside-window-options > .field { margin: 0; }
     .radio-card { display: flex; grid-template-columns: none; align-items: flex-start; gap: .6rem; padding: .65rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--raised-surface); cursor: pointer; }
     .radio-card:has(input:checked) { border-color: #2563eb; background: rgb(30 64 175 / 14%); }
     .radio-card input { width: auto; margin-top: .2rem; accent-color: #2563eb; }
@@ -381,6 +384,7 @@
     .ui.button { font-family: inherit; }
     .ui.basic.button { color: var(--foreground) !important; box-shadow: 0 0 0 1px var(--strong-border) inset; }
     .ui.basic.button:hover { color: var(--foreground) !important; background: var(--raised-surface) !important; }
+    .ui.basic.label { color: var(--subtle-foreground); border-color: var(--strong-border); background: var(--control-surface); }
     .ui.cards.plug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; margin: 0; }
     .ui.cards.plug-grid::after { display: none; }
     .ui.cards.plug-grid > .ui.card { width: 100%; margin: 0; }
@@ -621,23 +625,11 @@
 
     function initializeSemanticControls(root) {
       $(root).find(".schedule-add-dropdown").dropdown({
-        action: "hide"
+        action: "hide",
+        onChange: function (value) {
+          openAddSchedule(value);
+        }
       });
-      root.addEventListener("click", function (event) {
-        const item = event.target.closest(".schedule-add-menu [data-value]");
-        if (!item) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openAddSchedule(item.dataset.value);
-      }, true);
-      root.addEventListener("keydown", function (event) {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        const item = event.target.closest(".schedule-add-menu [data-value]");
-        if (!item) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openAddSchedule(item.dataset.value);
-      }, true);
     }
 
     function setCalendarView(button, view) {

@@ -2914,9 +2914,10 @@ mod tests {
         ));
         assert!(fragment
             .contains("id=\"schedule-add-menu\" class=\"menu schedule-add-menu\" role=\"menu\""));
-        assert!(fragment.contains(
-            "<button class=\"item\" type=\"button\" role=\"menuitem\" data-value=\"add-fixed-schedule\""
-        ));
+        assert!(fragment
+            .contains("<div class=\"item\" role=\"menuitem\" data-value=\"add-fixed-schedule\""));
+        assert!(!fragment.contains("<button class=\"item\""));
+        assert!(fragment.contains("class=\"field\"><label for=\"new-fixed-name\""));
         assert!(fragment.contains("id=\"add-fixed-schedule\" class=\"schedule-add-form\""));
         assert!(fragment.contains("id=\"add-solar-schedule\" class=\"schedule-add-form\""));
         assert!(fragment
@@ -3213,6 +3214,8 @@ mod tests {
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/countdown/timer-id\""));
         assert!(fragment.contains("Turn off in 30 min"));
         assert!(fragment.contains("aria-labelledby=\"timer-pane-title timer-pane-address\""));
+        assert!(fragment.contains("class=\"ui right labeled input\""));
+        assert!(fragment.contains("<label for=\"countdown-minutes\">After</label>"));
         assert!(fragment.contains("&lt;Web timer&gt;"));
         assert!(!fragment.contains("<Web timer>"));
     }
