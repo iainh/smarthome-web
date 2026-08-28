@@ -348,8 +348,8 @@
     /* Apply the app theme to reusable Semantic UI components. */
     .ui.segment, .ui.card, .ui.message { color: var(--foreground); border-color: var(--border); background: var(--surface); }
     .ui.segment { box-shadow: 0 1px 2px var(--shadow); }
-    .ui.message > .header, .ui.card > .content > .header { color: var(--foreground); }
-    .ui.message p, .ui.card > .content > .description, .ui.card > .content > .meta { color: var(--muted); }
+    .ui.message > .header, .ui.card > .content > .header:not(.ui) { color: var(--foreground); }
+    .ui.message p, .ui.card > .content > .description:not(.ui), .ui.card > .content > .meta:not(.ui) { color: var(--muted); }
     .ui.form .field > label, .ui.form label { color: var(--muted); }
     .ui.form input:not([type]), .ui.form input[type="text"], .ui.form input[type="time"],
     .ui.form input[type="number"], .ui.form select {
