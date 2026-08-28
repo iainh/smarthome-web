@@ -1672,12 +1672,19 @@ fn push_scheduled_state_span(
         return;
     }
     let state = if state_rule.turn_on { "on" } else { "off" };
-    let detail = format!(
-        "Scheduled {state} {}–{} · set by {}",
-        calendar_absolute_time(start),
-        calendar_absolute_time(end),
-        state_rule.name
-    );
+    let detail = if start <= week_start && end >= week_end {
+        format!(
+            "Scheduled {state} all week · carried over from {}",
+            state_rule.name
+        )
+    } else {
+        format!(
+            "Scheduled {state} {}–{} · set by {}",
+            calendar_absolute_time(start),
+            calendar_absolute_time(end),
+            state_rule.name
+        )
+    };
     while segment_start < end {
         let day = segment_start.div_euclid(24 * 60);
         let segment_end = end.min((day + 1) * 24 * 60);
@@ -2842,12 +2849,39 @@ mod tests {
             last_solar_day: None,
         };
 
-        let calendar = week_calendar_view(&[rule], &calendar_weather(4, 8 * 60));
+        let weather = calendar_weather(4, 8 * 60);
+        let calendar = week_calendar_view(&[rule], &weather);
 
-        assert!(calendar.days.iter().all(|day| day
-            .entries
+        assert!(calendar
+            .days
             .iter()
-            .any(|entry| entry.class.contains("scheduled-off") && entry.width == 100.0)));
+            .all(|day| day.entries.iter().any(|entry| {
+                entry.class.contains("scheduled-off")
+                    && entry.width == 100.0
+                    && entry.detail == "Scheduled off all week · carried over from Weekly shutdown"
+            })));
+
+        let panel = AutomationPanel {
+            address: "192.0.2.1".to_owned(),
+            location_available: true,
+            calendar: Some(calendar),
+            weather: Some(weather),
+            rules: Vec::new(),
+            schedules: SchedulePanel {
+                migratable_count: 0,
+                unsupported_count: 0,
+                rules: Vec::new(),
+            },
+        };
+        let fragment = templates()
+            .unwrap()
+            .get_template("automation-panel.html")
+            .unwrap()
+            .render(context! { panel })
+            .unwrap();
+        assert!(fragment.contains("No turn-on event is scheduled"));
+        assert!(fragment
+            .contains("The plug stays off until another schedule or manual action changes it."));
     }
 
     #[test]

@@ -24,6 +24,9 @@
       </div>
       {% if panel.calendar.summary %}
         <div class="ui compact message calendar-summary"><strong>Scheduled {{ panel.calendar.summary.state }} now</strong>{% if panel.calendar.summary.next %}<span>{{ panel.calendar.summary.next }}</span>{% endif %}</div>
+        {% if not panel.calendar.summary.next %}
+          <div class="ui warning message calendar-carry-warning"><strong>No turn-{% if panel.calendar.summary.state == "ON" %}off{% else %}on{% endif %} event is scheduled</strong><span>The plug stays {{ panel.calendar.summary.state | lower }} until another schedule or manual action changes it.</span></div>
+        {% endif %}
       {% endif %}
       <p class="calendar-help">Select a span or boundary to inspect, edit, or disable its rule.</p>
       <div class="calendar-day-picker" role="group" aria-label="Calendar day">
@@ -89,6 +92,7 @@
             <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
             <label>Time<input name="time" type="time" required value="{{ rule.time }}"></label>
             <label>Action<select name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></label>
+            <p class="schedule-action-help">This changes the plug’s state until another schedule or manual action changes it.</p>
             <div class="weekdays">
               <label class="weekday"><input type="checkbox" name="sun"{% if rule.sun %} checked{% endif %}>Sun</label>
               <label class="weekday"><input type="checkbox" name="mon"{% if rule.mon %} checked{% endif %}>Mon</label>
@@ -106,6 +110,7 @@
             <label>Event<select name="event"><option value="sunrise"{% if rule.event == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.event == "sunset" %} selected{% endif %}>Sunset</option></select></label>
             <label>Offset in minutes<input name="offset_minutes" type="number" min="-180" max="180" required value="{{ rule.offset_minutes }}"></label>
             <label>Action<select name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></label>
+            <p class="schedule-action-help">This changes the plug’s state until another schedule or manual action changes it.</p>
             <div class="weekdays">
               <label class="weekday"><input type="checkbox" name="sun"{% if rule.sun %} checked{% endif %}>Sun</label>
               <label class="weekday"><input type="checkbox" name="mon"{% if rule.mon %} checked{% endif %}>Mon</label>
@@ -178,6 +183,7 @@
             <option value="off">Turn off</option>
           </select>
         </label>
+        <p class="schedule-action-help">This changes the plug’s state until another schedule or manual action changes it.</p>
         <div class="weekdays">
           <label class="weekday"><input type="checkbox" name="sun">Sun</label>
           <label class="weekday"><input type="checkbox" name="mon" checked>Mon</label>
@@ -212,6 +218,7 @@
             <option value="off">Turn off</option>
           </select>
         </label>
+        <p class="schedule-action-help">This changes the plug’s state until another schedule or manual action changes it.</p>
         <div class="weekdays">
           <label class="weekday"><input type="checkbox" name="sun" checked>Sun</label>
           <label class="weekday"><input type="checkbox" name="mon" checked>Mon</label>
