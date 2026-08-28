@@ -2,6 +2,7 @@ use crate::automation::AutomationRule;
 use crate::group::DeviceGroup;
 use rusqlite::Connection;
 use serde::Deserialize;
+use smarthome::SmartPlug;
 use std::convert::TryFrom;
 use std::error::Error;
 use std::fs;
@@ -10,7 +11,6 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tddp_client::SmartPlug;
 
 type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -430,7 +430,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("tddp-client-schema-{unique}.sqlite3"));
+        let path = std::env::temp_dir().join(format!("smarthome-web-schema-{unique}.sqlite3"));
         let connection = Connection::open(&path).unwrap();
         connection
             .execute_batch(
@@ -505,9 +505,10 @@ mod tests {
             .unwrap()
             .as_nanos();
         let directory = std::env::temp_dir();
-        let database_path = directory.join(format!("tddp-client-migration-{unique}.sqlite3"));
-        let automation_path = directory.join(format!("tddp-client-migration-{unique}-rules.json"));
-        let group_path = directory.join(format!("tddp-client-migration-{unique}-groups.json"));
+        let database_path = directory.join(format!("smarthome-web-migration-{unique}.sqlite3"));
+        let automation_path =
+            directory.join(format!("smarthome-web-migration-{unique}-rules.json"));
+        let group_path = directory.join(format!("smarthome-web-migration-{unique}-groups.json"));
         fs::write(
             &automation_path,
             r#"{

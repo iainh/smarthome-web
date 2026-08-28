@@ -16,6 +16,7 @@ use database::Database;
 use group::{DeviceGroup, GroupEngine};
 use minijinja::{context, AutoEscape, Environment};
 use serde::{Deserialize, Serialize};
+use smarthome::{CountdownRule, ScheduleRule, SmartHomeClient, SmartPlug};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::error::Error as StdError;
@@ -24,7 +25,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tddp_client::{CountdownRule, ScheduleRule, SmartHomeClient, SmartPlug};
 use tokio::task;
 
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
@@ -345,8 +345,8 @@ impl IntoResponse for AppError {
     }
 }
 
-impl From<tddp_client::Error> for AppError {
-    fn from(error: tddp_client::Error) -> Self {
+impl From<smarthome::Error> for AppError {
+    fn from(error: smarthome::Error) -> Self {
         Self::internal(error.to_string())
     }
 }

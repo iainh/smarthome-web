@@ -1,8 +1,11 @@
 [package]
-name = "tddp-client"
+name = "smarthome-web"
 version = "0.1.0"
 authors = ["Iain H <iain@spiralpoint.org>"]
 edition = "2018"
+
+[lib]
+name = "smarthome"
 
 [dependencies]
 axum = "0.8"

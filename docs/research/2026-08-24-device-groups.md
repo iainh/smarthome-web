@@ -1,12 +1,12 @@
 # Research: Kasa-style device groups
 
 **Date**: 2026-08-24
-**Question**: How should `tddp-client` add device groups similar to the Kasa app?
+**Question**: How should `smarthome-web` add device groups similar to the Kasa app?
 **Status**: Complete
 
 ## Context
 
-`tddp-client` discovers and controls legacy Kasa smart plugs over the local TCP/UDP protocol. The goal is to let a user collect plugs under a named group and switch the reachable members together, while retaining control of each plug.
+`smarthome-web` uses the `smarthome` protocol library to discover and control legacy Kasa smart plugs over the local TCP/UDP protocol. The goal is to let a user collect plugs under a named group and switch the reachable members together, while retaining control of each plug.
 
 This note records the design investigation that preceded the local device-group implementation.
 
@@ -38,7 +38,7 @@ The independent `python-kasa` implementation has the same shape:
 - The legacy module registry contains schedules, countdown, anti-theft, cloud, and energy modules, but no device-group module.
 - Its only multi-target context is for physical child outlets in a power strip, not arbitrary app-created groups.
 
-Consequently, `tddp-client` should persist groups locally and fan a relay command out to each currently reachable member. Adding group methods to the wire-protocol library would put an application concern in the wrong layer.
+Consequently, `smarthome-web` should persist groups locally and fan a relay command out to each currently reachable member. Adding group methods to the `smarthome` wire-protocol library would put an application concern in the wrong layer.
 
 ### Device IDs are stable membership keys; IP addresses are not
 
@@ -128,7 +128,7 @@ Build one inventory page model from current plugs plus stored groups. Recommende
 | Mixed | Reachable members differ |
 | Unavailable | No member is reachable |
 
-Offline status is orthogonal: show a warning whenever `reachable_count < total_count`, including for On, Off, or Mixed. This is clearer than forcing mixed or partial availability into one Boolean. Because Kasa's mixed-state display is undocumented, label this as intentional `tddp-client` behaviour.
+Offline status is orthogonal: show a warning whenever `reachable_count < total_count`, including for On, Off, or Mixed. This is clearer than forcing mixed or partial availability into one Boolean. Because Kasa's mixed-state display is undocumented, label this as intentional `smarthome-web` behaviour.
 
 ### Routes
 
@@ -205,9 +205,9 @@ This is the smallest design that matches the important Kasa experience while res
 ## References
 
 - [TP-Link: How to Use the Kasa App Grouping Feature to Control Multiple Devices](https://www.tp-link.com/us/support/faq/2299/) (updated 2026-07-01)
-- [`tddp-client` protocol client](../../src/lib.rs)
-- [`tddp-client` web application](../../src/main.rs)
-- [`tddp-client` automation persistence and ID resolution](../../src/automation.rs)
+- [`smarthome` protocol client](../../src/lib.rs)
+- [`smarthome-web` web application](../../src/main.rs)
+- [`smarthome-web` automation persistence and ID resolution](../../src/automation.rs)
 - [python-kasa repository](https://github.com/python-kasa/python-kasa)
 - [python-kasa legacy plug control](https://github.com/python-kasa/python-kasa/blob/master/kasa/iot/iotplug.py)
 - [python-kasa legacy module registry](https://github.com/python-kasa/python-kasa/blob/master/kasa/iot/modules/__init__.py)

@@ -18,7 +18,7 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/tddp-client /usr/local/bin/tddp-client
+COPY --from=builder /app/target/release/smarthome-web /usr/local/bin/smarthome-web
 
 ENV BIND_ADDR=0.0.0.0:3000
 ENV DATABASE_PATH=/data/tddp-client.sqlite3
@@ -26,4 +26,4 @@ ENV DATABASE_PATH=/data/tddp-client.sqlite3
 VOLUME ["/data"]
 EXPOSE 3000
 
-ENTRYPOINT ["/usr/local/bin/tddp-client"]
+ENTRYPOINT ["/usr/local/bin/smarthome-web"]

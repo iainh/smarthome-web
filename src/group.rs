@@ -181,7 +181,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!(
-            "tddp-client-groups-{}-{unique}.sqlite3",
+            "smarthome-web-groups-{}-{unique}.sqlite3",
             std::process::id()
         ))
     }

@@ -1,6 +1,7 @@
 use crate::database::{Database, WeatherObservation};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use smarthome::{SmartHomeClient, SmartPlug};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::error::Error;
@@ -8,7 +9,6 @@ use std::io;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tddp_client::{SmartHomeClient, SmartPlug};
 
 const EVALUATION_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const SOLAR_TRIGGER_WINDOW_SECONDS: i64 = 20 * 60;
@@ -1171,7 +1171,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "tddp-client-automations-{}-{unique}.sqlite3",
+            "smarthome-web-automations-{}-{unique}.sqlite3",
             std::process::id()
         ));
         let engine = AutomationEngine::new(Arc::new(Database::open(&path).unwrap())).unwrap();

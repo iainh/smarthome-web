@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Kasa Smart Plug Manager",
-  "short_name": "Smart Plugs",
+  "name": "SmartHome Web",
+  "short_name": "SmartHome",
   "description": "Remember, control, group, and automate Kasa smart plugs on your local network.",
   "start_url": "/",
   "scope": "/",

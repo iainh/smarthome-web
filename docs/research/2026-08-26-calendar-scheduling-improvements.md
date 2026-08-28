@@ -1,7 +1,7 @@
 # Research: Calendar view scheduling improvements
 
 **Date**: 2026-08-26
-**Question**: How should `tddp-client` improve its weekly calendar so schedules are easier to understand and edit on desktop and mobile?
+**Question**: How should `smarthome-web` improve its weekly calendar so schedules are easier to understand and edit on desktop and mobile?
 **Status**: Complete
 
 ## Recommendation
