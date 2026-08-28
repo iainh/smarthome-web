@@ -49,16 +49,22 @@ pub fn start() -> io::Result<Vec<SmartPlug>> {
 
 fn mock_outlets() -> HashMap<IpAddr, Outlet> {
     vec![
-        mock_outlet(2, "Living room lamp", "HS105(US)", true),
-        mock_outlet(3, "Coffee maker", "HS103(US)", false),
-        mock_outlet(4, "Patio lights", "KP115(US)", true),
+        mock_outlet(2, "Living room lamp", "HS220(US)", true, Some(65)),
+        mock_outlet(3, "Coffee maker", "HS103(US)", false, None),
+        mock_outlet(4, "Patio lights", "KP115(US)", true, None),
     ]
     .into_iter()
     .map(|outlet| (outlet.plug.address, outlet))
     .collect()
 }
 
-fn mock_outlet(octet: u8, alias: &str, model: &str, relay_on: bool) -> Outlet {
+fn mock_outlet(
+    octet: u8,
+    alias: &str,
+    model: &str,
+    relay_on: bool,
+    brightness: Option<u8>,
+) -> Outlet {
     let schedule_rules = (octet == 4)
         .then(|| {
             vec![json!({
@@ -83,6 +89,7 @@ fn mock_outlet(octet: u8, alias: &str, model: &str, relay_on: bool) -> Outlet {
             device_id: format!("mock-outlet-{octet}"),
             software_version: "1.0.0-mock".to_owned(),
             relay_on,
+            brightness,
             latitude: Some(46.4917),
             longitude: Some(-80.9930),
         },
@@ -121,6 +128,7 @@ fn respond(outlet: &mut Outlet, request: &Value) -> Value {
             "deviceId": outlet.plug.device_id,
             "sw_ver": outlet.plug.software_version,
             "relay_state": u8::from(outlet.plug.relay_on),
+            "brightness": outlet.plug.brightness,
             "latitude": outlet.plug.latitude,
             "longitude": outlet.plug.longitude,
             "err_code": 0
@@ -131,6 +139,13 @@ fn respond(outlet: &mut Outlet, request: &Value) -> Value {
                 .and_then(Value::as_u64)
                 .unwrap_or_default()
                 != 0;
+            json!({ "err_code": 0 })
+        }
+        ("smartlife.iot.dimmer", "set_brightness") if outlet.plug.brightness.is_some() => {
+            outlet.plug.brightness = arguments
+                .get("brightness")
+                .and_then(Value::as_u64)
+                .and_then(|brightness| u8::try_from(brightness).ok());
             json!({ "err_code": 0 })
         }
         ("count_down", "get_rules") => rules_response(&outlet.countdown_rules),
@@ -248,7 +263,7 @@ mod tests {
 
     #[test]
     fn relay_and_countdown_commands_update_mock_state() {
-        let mut outlet = mock_outlet(2, "Test", "HS105(US)", false);
+        let mut outlet = mock_outlet(2, "Test", "HS105(US)", false, None);
         let relay = respond(
             &mut outlet,
             &json!({ "system": { "set_relay_state": { "state": 1 } } }),
@@ -271,6 +286,21 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn brightness_command_updates_mock_dimmer() {
+        let mut outlet = mock_outlet(2, "Test dimmer", "HS220(US)", true, Some(40));
+        let response = respond(
+            &mut outlet,
+            &json!({ "smartlife.iot.dimmer": { "set_brightness": { "brightness": 75 } } }),
+        );
+
+        assert_eq!(
+            response["smartlife.iot.dimmer"]["set_brightness"]["err_code"],
+            0
+        );
+        assert_eq!(outlet.plug.brightness, Some(75));
     }
 
     #[test]

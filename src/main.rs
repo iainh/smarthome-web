@@ -49,6 +49,7 @@ struct PlugView {
     device_id: String,
     software_version: String,
     relay_on: bool,
+    brightness: Option<u8>,
 }
 
 impl From<SmartPlug> for PlugView {
@@ -61,6 +62,7 @@ impl From<SmartPlug> for PlugView {
             device_id: plug.device_id,
             software_version: plug.software_version,
             relay_on: plug.relay_on,
+            brightness: plug.brightness,
         }
     }
 }
@@ -68,6 +70,11 @@ impl From<SmartPlug> for PlugView {
 #[derive(Deserialize)]
 struct RelayForm {
     on: bool,
+}
+
+#[derive(Deserialize)]
+struct BrightnessForm {
+    brightness: u8,
 }
 
 #[derive(Deserialize)]
@@ -458,6 +465,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             post(update_group_light_automation),
         )
         .route("/plugs/{address}/relay", post(set_relay))
+        .route("/plugs/{address}/brightness", post(set_brightness))
         .route("/plugs/{address}/automations", get(get_automations))
         .route(
             "/plugs/{address}/automations/fixed",
@@ -634,6 +642,21 @@ async fn set_relay(
     state
         .database
         .update_relay(address, on)
+        .map_err(database_error)?;
+    render_device_list(&state, load_device_list(&state, None)?)
+}
+
+async fn set_brightness(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<IpAddr>,
+    Form(form): Form<BrightnessForm>,
+) -> Result<Html<String>, AppError> {
+    let client = state.client.clone();
+    let brightness = form.brightness;
+    task::spawn_blocking(move || client.set_brightness(address, brightness)).await??;
+    state
+        .database
+        .update_brightness(address, brightness)
         .map_err(database_error)?;
     render_device_list(&state, load_device_list(&state, None)?)
 }
@@ -2640,6 +2663,7 @@ mod tests {
             device_id: device_id.to_owned(),
             software_version: "1.5.6".to_owned(),
             relay_on,
+            brightness: None,
             latitude: None,
             longitude: None,
         }
@@ -2882,6 +2906,7 @@ mod tests {
             device_id: "device-1".to_owned(),
             software_version: "1.5.6".to_owned(),
             relay_on: true,
+            brightness: Some(65),
         }];
 
         let page = templates()
@@ -2894,6 +2919,9 @@ mod tests {
         assert!(page.contains("hx-post=\"/scan\""));
         assert!(page.contains("hx-get=\"/groups/new\""));
         assert!(page.contains("hx-post=\"/plugs/192.0.2.1/relay\""));
+        assert!(page.contains("hx-post=\"/plugs/192.0.2.1/brightness\""));
+        assert!(page.contains("type=\"range\""));
+        assert!(page.contains("value=\"65\""));
         assert!(page.contains("hx-target=\"#plug-list\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/automations\""));
         assert!(page.contains("hx-get=\"/plugs/192.0.2.1/countdown\""));

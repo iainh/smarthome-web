@@ -83,6 +83,7 @@ impl Database {
                  alias TEXT NOT NULL,
                  software_version TEXT NOT NULL,
                  relay_on INTEGER NOT NULL,
+                 brightness INTEGER,
                  latitude REAL,
                  longitude REAL,
                  last_seen INTEGER NOT NULL
@@ -123,6 +124,13 @@ impl Database {
                 "ALTER TABLE automations ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
                 [],
             )?;
+        }
+        let device_columns = connection
+            .prepare("PRAGMA table_info(devices)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if !device_columns.iter().any(|column| column == "brightness") {
+            connection.execute("ALTER TABLE devices ADD COLUMN brightness INTEGER", [])?;
         }
         Ok(Self {
             connection: Mutex::new(connection),
@@ -203,7 +211,7 @@ impl Database {
         self.with_connection(|connection| {
             let mut statement = connection.prepare(
                 "SELECT address, model, alias, device_id, software_version, relay_on,
-                        latitude, longitude
+                        brightness, latitude, longitude
                  FROM devices ORDER BY alias COLLATE NOCASE, device_id",
             )?;
             let stored = statement
@@ -215,8 +223,9 @@ impl Database {
                         row.get::<_, String>(3)?,
                         row.get::<_, String>(4)?,
                         row.get::<_, bool>(5)?,
-                        row.get::<_, Option<f64>>(6)?,
+                        row.get::<_, Option<u8>>(6)?,
                         row.get::<_, Option<f64>>(7)?,
+                        row.get::<_, Option<f64>>(8)?,
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -230,6 +239,7 @@ impl Database {
                         device_id,
                         software_version,
                         relay_on,
+                        brightness,
                         latitude,
                         longitude,
                     )| {
@@ -240,6 +250,7 @@ impl Database {
                             device_id,
                             software_version,
                             relay_on,
+                            brightness,
                             latitude,
                             longitude,
                         })
@@ -257,14 +268,15 @@ impl Database {
                 let mut statement = transaction.prepare(
                     "INSERT INTO devices
                          (device_id, address, model, alias, software_version, relay_on,
-                          latitude, longitude, last_seen)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                          brightness, latitude, longitude, last_seen)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT(device_id) DO UPDATE SET
                          address = excluded.address,
                          model = excluded.model,
                          alias = excluded.alias,
                          software_version = excluded.software_version,
                          relay_on = excluded.relay_on,
+                         brightness = excluded.brightness,
                          latitude = excluded.latitude,
                          longitude = excluded.longitude,
                          last_seen = excluded.last_seen",
@@ -277,6 +289,7 @@ impl Database {
                         device.alias,
                         device.software_version,
                         device.relay_on,
+                        device.brightness,
                         device.latitude,
                         device.longitude,
                         seen_at,
@@ -293,6 +306,16 @@ impl Database {
             connection.execute(
                 "UPDATE devices SET relay_on = ?1 WHERE address = ?2",
                 rusqlite::params![relay_on, address.to_string()],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn update_brightness(&self, address: IpAddr, brightness: u8) -> Result<()> {
+        self.with_connection(|connection| {
+            connection.execute(
+                "UPDATE devices SET brightness = ?1 WHERE address = ?2",
+                rusqlite::params![brightness, address.to_string()],
             )?;
             Ok(())
         })
@@ -403,6 +426,7 @@ mod tests {
             device_id: "device-1".to_owned(),
             software_version: "1.5.6".to_owned(),
             relay_on: false,
+            brightness: None,
             latitude: Some(46.4106),
             longitude: Some(-81.0171),
         }
@@ -411,13 +435,19 @@ mod tests {
     #[test]
     fn remembered_devices_survive_updates_until_removed() {
         let database = Database::open(":memory:").unwrap();
-        database.remember_devices(&[smart_plug()]).unwrap();
+        let mut plug = smart_plug();
+        plug.brightness = Some(40);
+        database.remember_devices(&[plug]).unwrap();
         database.update_relay(smart_plug().address, true).unwrap();
+        database
+            .update_brightness(smart_plug().address, 75)
+            .unwrap();
 
         let devices = database.devices().unwrap();
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].device_id, "device-1");
         assert!(devices[0].relay_on);
+        assert_eq!(devices[0].brightness, Some(75));
 
         assert!(database.remove_device("device-1").unwrap());
         assert!(!database.remove_device("device-1").unwrap());

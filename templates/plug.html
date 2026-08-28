@@ -22,6 +22,15 @@
     </details>
   </div>
   <div class="content">
+    {% if plug.brightness is not none %}
+      <form class="dimmer-control" hx-post="/plugs/{{ plug.address }}/brightness" hx-trigger="change" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find input">
+        <label for="brightness-{{ plug.address }}">
+          <span>Brightness</span>
+          <output for="brightness-{{ plug.address }}">{{ plug.brightness }}%</output>
+        </label>
+        <input id="brightness-{{ plug.address }}" type="range" name="brightness" min="1" max="100" value="{{ plug.brightness }}" aria-label="Brightness for {{ plug.alias }}" oninput="this.previousElementSibling.querySelector('output').value = this.value + '%'">
+      </form>
+    {% endif %}
     <form hx-post="/plugs/{{ plug.address }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
       {% if plug.relay_on %}
         <button class="ui fluid negative button toggle toggle-off" type="submit" name="on" value="false"><i class="power off icon" aria-hidden="true"></i><span class="button-label">Turn off</span></button>

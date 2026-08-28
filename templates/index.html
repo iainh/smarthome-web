@@ -121,6 +121,10 @@
     dd { margin: 0; overflow-wrap: anywhere; }
     .toggle { width: 100%; color: #fff; background: #2563eb; }
     .toggle-off { background: #dc2626; }
+    .dimmer-control { display: grid; gap: .45rem; margin-bottom: 1rem; }
+    .dimmer-control label { display: flex; flex-direction: row; justify-content: space-between; gap: 1rem; color: var(--subtle-foreground); font-weight: 700; }
+    .dimmer-control output { color: var(--foreground); font-variant-numeric: tabular-nums; }
+    .dimmer-control input[type="range"] { padding: 0; accent-color: #2563eb; cursor: pointer; }
     .device-details { border-top: 1px solid var(--border); padding-top: .75rem; }
     .device-details dl { margin-top: .75rem; }
     .plug-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
@@ -131,7 +135,8 @@
     .group-relay-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
     .group-relay-actions .toggle { width: 100%; }
     .group-edit { width: 100%; }
-    .operation-notice { margin: 0; padding: .8rem 1rem; border: 1px solid var(--notice-border); border-radius: .75rem; color: var(--notice-foreground); background: var(--notice-background); }
+    .ui.message.operation-notice { margin: 0; padding: .8rem 1rem; border: 1px solid var(--notice-border); border-radius: .75rem; color: var(--notice-foreground); background: var(--notice-background); }
+    .ui.message.operation-notice p { color: inherit; }
     .app-notification { position: fixed; z-index: 30; right: 1rem; bottom: 1rem; display: flex; align-items: center; gap: .75rem; max-width: min(28rem, calc(100% - 2rem)); padding: .85rem 1rem; border: 1px solid #ef4444; border-radius: .75rem; color: #fee2e2; background: #7f1d1d; box-shadow: 0 .75rem 2rem var(--pane-shadow); }
     .app-notification button { padding: .35rem .55rem; color: inherit; background: transparent; }
     .confirmation-dialog { width: min(26rem, calc(100% - 2rem)); padding: 1.25rem; border: 1px solid var(--border); border-radius: .9rem; color: var(--foreground); background: var(--background); box-shadow: 0 1rem 3rem var(--pane-shadow); }

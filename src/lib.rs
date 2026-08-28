@@ -87,6 +87,7 @@ pub struct SmartPlug {
     pub device_id: String,
     pub software_version: String,
     pub relay_on: bool,
+    pub brightness: Option<u8>,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
 }
@@ -279,6 +280,8 @@ struct SysInfo {
     sw_ver: String,
     relay_state: u8,
     #[serde(default)]
+    brightness: Option<u8>,
+    #[serde(default)]
     latitude: Option<f64>,
     #[serde(default)]
     longitude: Option<f64>,
@@ -427,6 +430,21 @@ impl SmartHomeClient {
             "system",
             "set_relay_state",
             json!({ "state": u8::from(on) }),
+        )?;
+        Ok(())
+    }
+
+    pub fn set_brightness(&self, address: IpAddr, brightness: u8) -> Result<()> {
+        if !(1..=100).contains(&brightness) {
+            return Err(Error::InvalidInput(format!(
+                "brightness must be between 1 and 100, got {brightness}"
+            )));
+        }
+        self.query_command(
+            address,
+            "smartlife.iot.dimmer",
+            "set_brightness",
+            json!({ "brightness": brightness }),
         )?;
         Ok(())
     }
@@ -833,6 +851,7 @@ fn smart_plug(info: SysInfo, address: IpAddr) -> Option<SmartPlug> {
         device_id: info.device_id,
         software_version: info.sw_ver,
         relay_on: info.relay_state != 0,
+        brightness: info.brightness,
         latitude,
         longitude,
     })
@@ -1030,17 +1049,18 @@ mod tests {
 
     #[test]
     fn discovery_response_produces_inventory_entry() {
-        let plaintext = br#"{"system":{"get_sysinfo":{"model":"HS105(US)","alias":"Desk lamp","deviceId":"device-1","sw_ver":"1.5.6","relay_state":1,"latitude_i":464106,"longitude_i":-810171,"err_code":0,"new_field":"ignored"}}}"#;
+        let plaintext = br#"{"system":{"get_sysinfo":{"model":"HS220(US)","alias":"Desk lamp","deviceId":"device-1","sw_ver":"1.5.6","relay_state":1,"brightness":65,"latitude_i":464106,"longitude_i":-810171,"err_code":0,"new_field":"ignored"}}}"#;
 
         assert_eq!(
             parse_device(&encrypt(plaintext), IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
             Some(SmartPlug {
                 address: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
-                model: "HS105(US)".to_owned(),
+                model: "HS220(US)".to_owned(),
                 alias: "Desk lamp".to_owned(),
                 device_id: "device-1".to_owned(),
                 software_version: "1.5.6".to_owned(),
                 relay_on: true,
+                brightness: Some(65),
                 latitude: Some(46.4106),
                 longitude: Some(-81.0171),
             })
@@ -1058,9 +1078,32 @@ mod tests {
             json!({ "system": { "set_led_off": { "off": 0 } } })
         );
         assert_eq!(
+            command_request(
+                "smartlife.iot.dimmer",
+                "set_brightness",
+                json!({ "brightness": 65 })
+            ),
+            json!({ "smartlife.iot.dimmer": { "set_brightness": { "brightness": 65 } } })
+        );
+        assert_eq!(
             command_request("system", "reboot", json!({ "delay": 3 })),
             json!({ "system": { "reboot": { "delay": 3 } } })
         );
+    }
+
+    #[test]
+    fn brightness_rejects_values_outside_dimmer_range() {
+        let client = SmartHomeClient::new();
+        let address = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+        assert!(matches!(
+            client.set_brightness(address, 0),
+            Err(Error::InvalidInput(_))
+        ));
+        assert!(matches!(
+            client.set_brightness(address, 101),
+            Err(Error::InvalidInput(_))
+        ));
     }
 
     #[test]
