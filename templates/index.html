@@ -131,6 +131,14 @@
     .group-relay-actions .toggle { width: 100%; }
     .group-edit { width: 100%; }
     .operation-notice { margin: 0; padding: .8rem 1rem; border: 1px solid var(--notice-border); border-radius: .75rem; color: var(--notice-foreground); background: var(--notice-background); }
+    .app-notification { position: fixed; z-index: 30; right: 1rem; bottom: 1rem; display: flex; align-items: center; gap: .75rem; max-width: min(28rem, calc(100% - 2rem)); padding: .85rem 1rem; border: 1px solid #ef4444; border-radius: .75rem; color: #fee2e2; background: #7f1d1d; box-shadow: 0 .75rem 2rem var(--pane-shadow); }
+    .app-notification button { padding: .35rem .55rem; color: inherit; background: transparent; }
+    .confirmation-dialog { width: min(26rem, calc(100% - 2rem)); padding: 1.25rem; border: 1px solid var(--border); border-radius: .9rem; color: var(--foreground); background: var(--background); box-shadow: 0 1rem 3rem var(--pane-shadow); }
+    .confirmation-dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(2px); }
+    .confirmation-dialog h2 { margin: 0; font-size: 1.15rem; }
+    .confirmation-dialog p { margin: .75rem 0 1.25rem; color: var(--muted); line-height: 1.5; }
+    .confirmation-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+    .form-error { margin: 0; color: #f87171; font-size: .75rem; font-weight: 700; }
     .device-pane { position: fixed; z-index: 10; inset: 0 0 0 auto; width: min(32rem, 100%); height: 100%; max-width: none; max-height: none; margin: 0 0 0 auto; overflow-y: auto; padding: 1.25rem; border: 0; border-left: 1px solid var(--border); border-radius: 0; color: var(--foreground); background: var(--background); box-shadow: -1rem 0 3rem var(--pane-shadow); }
     .device-pane::backdrop { background: var(--backdrop); backdrop-filter: blur(2px); }
     .device-pane:not([open]) { display: none; }
@@ -326,6 +334,9 @@
     .plug-migration { display: grid; gap: .65rem; margin-top: 1rem; padding: 1rem; border: 1px solid #92400e; border-radius: .75rem; background: rgb(120 53 15 / 12%); }
     .migration-button { width: 100%; background: #2563eb; }
     .empty { padding: 3rem 1rem; border: 1px dashed var(--strong-border); border-radius: 1rem; color: var(--muted); text-align: center; }
+    .request-label { display: none; }
+    .htmx-request > .button-label { display: none; }
+    .htmx-request > .request-label { display: inline; }
     .htmx-request .button-label { opacity: .5; }
     @media (max-width: 36rem) {
       header { align-items: stretch; flex-direction: column; }
@@ -402,17 +413,35 @@
         <button class="ui button scan" hx-post="/scan" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="this">
           <i class="search icon" aria-hidden="true"></i>
           <span class="button-label">Scan for devices</span>
+          <span class="request-label">Scanning…</span>
         </button>
       </div>
     </header>
     {% include "plug-list.html" %}
   </main>
   <dialog id="device-pane" class="device-pane" aria-label="Device controls"></dialog>
+  <div id="app-notification" class="app-notification" role="alert" hidden>
+    <span class="app-notification-message"></span>
+    <button type="button" aria-label="Dismiss notification" onclick="this.parentElement.hidden = true"><i class="close icon" aria-hidden="true"></i></button>
+  </div>
+  <dialog id="confirmation-dialog" class="confirmation-dialog" aria-labelledby="confirmation-title">
+    <form method="dialog">
+      <h2 id="confirmation-title">Confirm action</h2>
+      <p class="confirmation-message"></p>
+      <div class="confirmation-actions">
+        <button class="ui button" type="submit" value="cancel">Cancel</button>
+        <button class="ui negative button danger" type="submit" value="confirm">Confirm</button>
+      </div>
+    </form>
+  </dialog>
   <script>
     const paneWidthKey = "kasa-device-pane-width";
     const themeKey = "kasa-theme";
     const installButton = document.querySelector(".install-app");
+    const notification = document.getElementById("app-notification");
+    const confirmationDialog = document.getElementById("confirmation-dialog");
     let installPrompt = null;
+    let pendingConfirmation = null;
     let resizingPane = null;
 
     function updateThemeButton() {
@@ -473,8 +502,55 @@
       } catch (_) {}
     }
 
+    function showError(message) {
+      const pane = document.querySelector(".device-pane[open]");
+      let currentNotification = notification;
+      if (pane) {
+        currentNotification = pane.querySelector(":scope > .app-notification");
+        if (!currentNotification) {
+          currentNotification = notification.cloneNode(true);
+          currentNotification.removeAttribute("id");
+          pane.append(currentNotification);
+        }
+      }
+      currentNotification.querySelector(".app-notification-message").textContent = message;
+      currentNotification.hidden = false;
+    }
+
+    function requestConfirmation(message, action) {
+      confirmationDialog.querySelector(".confirmation-message").textContent = message;
+      confirmationDialog.returnValue = "";
+      pendingConfirmation = action;
+      confirmationDialog.showModal();
+    }
+
+    confirmationDialog.addEventListener("close", function () {
+      const action = pendingConfirmation;
+      pendingConfirmation = null;
+      if (confirmationDialog.returnValue === "confirm" && action) action();
+    });
+
+    document.body.addEventListener("htmx:confirm", function (event) {
+      if (!event.detail.question) return;
+      event.preventDefault();
+      requestConfirmation(event.detail.question, function () {
+        event.detail.issueRequest(true);
+      });
+    });
+    document.body.addEventListener("htmx:beforeRequest", function (event) {
+      const button = event.detail.elt.matches("button")
+        ? event.detail.elt
+        : event.detail.elt.querySelector("button[type='submit']");
+      if (button) button.setAttribute("aria-busy", "true");
+    });
+    document.body.addEventListener("htmx:afterRequest", function (event) {
+      const button = event.detail.elt.matches("button")
+        ? event.detail.elt
+        : event.detail.elt.querySelector("button[type='submit']");
+      if (button) button.removeAttribute("aria-busy");
+    });
     document.body.addEventListener("htmx:responseError", function (event) {
-      window.alert(event.detail.xhr.responseText || "The device request failed.");
+      showError(event.detail.xhr.responseText || "The device request failed.");
     });
     document.body.addEventListener("htmx:afterSwap", function (event) {
       if (event.detail.target.id === "device-pane") {
@@ -513,6 +589,13 @@
     function updateLightRuleForm(form) {
       const onBelow = form.elements.on_below.value;
       const offAbove = form.elements.off_above.value;
+      const invalidThresholds = onBelow !== "" && offAbove !== ""
+        && Number(onBelow) >= Number(offAbove);
+      const thresholdError = form.querySelector(".threshold-error");
+      form.elements.off_above.setCustomValidity(invalidThresholds
+        ? "Turn-off threshold must be greater than the turn-on threshold."
+        : "");
+      thresholdError.hidden = !invalidThresholds;
       form.querySelectorAll(".on-threshold-output").forEach(function (output) {
         output.value = onBelow;
       });
@@ -631,15 +714,16 @@
     }
 
     function deleteSelectedCalendarRule(button) {
-      if (!window.confirm("Delete this schedule?")) return;
-      const selection = button.closest(".calendar-selection");
-      const calendar = selection.closest(".week-calendar");
-      button.disabled = true;
-      htmx.ajax("DELETE", calendar.dataset.automationBase + "/" + selection.dataset.ruleId, {
-        target: "#device-pane",
-        swap: "outerHTML"
-      }).catch(function () {
-        button.disabled = false;
+      requestConfirmation("Delete this schedule?", function () {
+        const selection = button.closest(".calendar-selection");
+        const calendar = selection.closest(".week-calendar");
+        button.disabled = true;
+        htmx.ajax("DELETE", calendar.dataset.automationBase + "/" + selection.dataset.ruleId, {
+          target: "#device-pane",
+          swap: "outerHTML"
+        }).catch(function () {
+          button.disabled = false;
+        });
       });
     }
 
@@ -671,6 +755,14 @@
       const entry = event.target.closest("[data-calendar-entry]");
       if (entry) selectCalendarEntry(entry);
     });
+    document.body.addEventListener("invalid", function (event) {
+      const form = event.target.closest(".light-rule-form");
+      const thresholdError = form && form.querySelector(".threshold-error");
+      if (event.target.name === "off_above" && thresholdError && !thresholdError.hidden) {
+        event.preventDefault();
+        event.target.focus();
+      }
+    }, true);
     document.body.addEventListener("input", function (event) {
       const form = event.target.closest(".light-rule-form");
       if (form) updateLightRuleForm(form);

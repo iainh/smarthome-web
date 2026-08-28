@@ -2606,6 +2606,10 @@ mod tests {
         assert!(!page.contains("hx-get=\"/plugs/192.0.2.1/schedules\""));
         assert!(page.contains("hx-target=\"#device-pane\""));
         assert!(page.contains("id=\"device-pane\""));
+        assert!(page.contains("id=\"app-notification\""));
+        assert!(page.contains("id=\"confirmation-dialog\""));
+        assert!(page.contains("Scanning…"));
+        assert!(!page.contains("window.alert"));
         assert!(page.contains("&lt;Desk lamp&gt;"));
         assert!(!page.contains("<Desk lamp>"));
     }
@@ -3109,6 +3113,8 @@ mod tests {
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/8/fixed\""));
         assert!(fragment.contains("name=\"time\" type=\"time\" required value=\"07:30\""));
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/9/light\""));
+        assert!(fragment.contains("id=\"threshold-error-9\""));
+        assert!(fragment.contains("id=\"threshold-error-new\""));
         assert!(fragment.contains("name=\"end_offset_minutes\" type=\"number\" min=\"-180\" max=\"180\" required value=\"-10\""));
         assert!(fragment.contains("name=\"outside_window\" value=\"stop_controlling\" checked"));
         assert!(fragment.contains("Schedules still on the plug"));

@@ -122,8 +122,9 @@
             <label>Name<input name="name" maxlength="64" required value="{{ rule.name }}"></label>
             <div class="form-row">
               <label>Turn on at or below<span class="unit-input"><input name="on_below" type="number" min="0" max="1499" step="1" required value="{{ rule.on_below }}"><span>W/m²</span></span></label>
-              <label>Turn off at or above<span class="unit-input"><input name="off_above" type="number" min="1" max="1500" step="1" required value="{{ rule.off_above }}"><span>W/m²</span></span></label>
+              <label>Turn off at or above<span class="unit-input"><input name="off_above" type="number" min="1" max="1500" step="1" required value="{{ rule.off_above }}" aria-describedby="threshold-error-{{ rule.id }}"><span>W/m²</span></span></label>
             </div>
+            <p id="threshold-error-{{ rule.id }}" class="form-error threshold-error" role="alert" hidden>Turn-off threshold must be greater than the turn-on threshold.</p>
             <label class="window-toggle"><input type="checkbox" name="window_enabled"{% if rule.window_enabled %} checked{% endif %}>Only control during an active window</label>
             <div class="window-flow">
               <div class="boundary-card" data-boundary="start">
@@ -238,9 +239,10 @@
               <span class="unit-input"><input name="on_below" type="number" min="0" max="1499" step="1" required value="100"><span>W/m²</span></span>
             </label>
             <label>Turn off at or above
-              <span class="unit-input"><input name="off_above" type="number" min="1" max="1500" step="1" required value="125"><span>W/m²</span></span>
+              <span class="unit-input"><input name="off_above" type="number" min="1" max="1500" step="1" required value="125" aria-describedby="threshold-error-new"><span>W/m²</span></span>
             </label>
           </div>
+          <p id="threshold-error-new" class="form-error threshold-error" role="alert" hidden>Turn-off threshold must be greater than the turn-on threshold.</p>
           <span class="schedule-status">The gap prevents rapid switching.</span>
           <div class="threshold-scale" aria-label="Below the lower threshold the plug turns on; between thresholds it keeps its current state; above the upper threshold it turns off">
             <span class="threshold-on">On<small>≤ <output class="on-threshold-output">100</output></small></span>
