@@ -194,7 +194,7 @@
     .schedule-editor { margin: 0; padding: .6rem .7rem; background: var(--detail-surface); }
     .schedule-editor > summary { color: var(--subtle-foreground); font-size: .75rem; font-weight: 700; }
     .schedule-editor > .schedule-form { margin-top: .7rem; }
-    .window-toggle { display: flex; grid-template-columns: none; align-items: center; gap: .5rem; color: var(--subtle-foreground); }
+    .ui.form label.window-toggle { display: flex; align-items: center; gap: .5rem; color: var(--subtle-foreground); }
     .window-toggle input { width: auto; accent-color: #2563eb; }
     .automation-intro { margin: 0; color: var(--muted); font-size: .85rem; line-height: 1.5; }
     .schedule-add-control { display: grid; gap: .65rem; margin-top: .75rem; }
@@ -335,9 +335,9 @@
     .device-pane .advanced-timing p { margin: .5rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.4; }
     .outside-window-options { gap: .5rem; }
     .ui.form .outside-window-options > .field { margin: 0; }
-    .radio-card { display: flex; grid-template-columns: none; align-items: flex-start; gap: .6rem; padding: .65rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--raised-surface); cursor: pointer; }
+    .ui.form label.radio-card { display: flex; align-items: center; gap: .6rem; padding: .65rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--raised-surface); cursor: pointer; }
     .radio-card:has(input:checked) { border-color: #2563eb; background: rgb(30 64 175 / 14%); }
-    .radio-card input { width: auto; margin-top: .2rem; accent-color: #2563eb; }
+    .radio-card input { width: auto; accent-color: #2563eb; }
     .radio-card span { display: grid; gap: .15rem; }
     .radio-card strong { color: var(--foreground); font-size: .78rem; }
     .radio-card small { color: var(--muted); font-size: .68rem; line-height: 1.35; }
