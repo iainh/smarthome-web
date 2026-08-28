@@ -21,4 +21,6 @@ if ! rustup run 1.88.0 rustc --version >/dev/null 2>&1; then
   rustup toolchain install 1.88.0 --profile minimal
 fi
 rustup default 1.88.0
+rustup component add rustfmt --toolchain 1.88.0
 cargo fetch --locked
+cargo build --locked

@@ -1,0 +1,12 @@
+services:
+  web:
+    command: BIND_ADDR="0.0.0.0:$PORT" cargo run --locked --quiet
+    env:
+      MOCK_OUTLETS: "1"
+      DEVICE_ADDRESSES: "127.0.0.2,127.0.0.3,127.0.0.4"
+      DATABASE_PATH: "/tmp/smarthome-web-orb.sqlite3"
+    health: /
+    portal:
+      title: Smart plug manager
+      description: Explore the app with three mock Kasa outlets.
+    agent: control

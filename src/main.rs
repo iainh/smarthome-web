@@ -1,6 +1,7 @@
 mod automation;
 mod database;
 mod group;
+mod mock;
 
 use automation::{
     ActiveWindow, AutomationEngine, AutomationRule, AutomationTrigger, NewAutomation,
@@ -365,6 +366,10 @@ impl From<task::JoinError> for AppError {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
+    let mock_devices = match std::env::var("MOCK_OUTLETS").as_deref() {
+        Ok("1" | "true") => Some(mock::start()?),
+        _ => None,
+    };
     let database_path = std::env::var_os("DATABASE_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("tddp-client.sqlite3"));
@@ -381,6 +386,9 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     };
     let database = Arc::new(Database::open(database_path)?);
     database.migrate_legacy_json(automation_path, group_path)?;
+    if let Some(devices) = mock_devices {
+        database.remember_devices(&devices)?;
+    }
     let automations = Arc::new(AutomationEngine::new(database.clone())?);
     let groups = Arc::new(GroupEngine::new(database.clone()));
     let state = Arc::new(AppState {
