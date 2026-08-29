@@ -21,8 +21,6 @@
   <link rel="shortcut icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/assets/icons/icon-180.png" sizes="180x180">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
   <script src="https://unpkg.com/htmx.org@4.0.0/dist/htmx.min.js"></script>
   <script>
     try {
@@ -210,13 +208,15 @@
     .window-toggle input { width: auto; accent-color: #2563eb; }
     .automation-intro { margin: 0; color: var(--muted); font-size: .85rem; line-height: 1.5; }
     .schedule-add-control { display: grid; gap: .65rem; margin-top: .75rem; }
-    .schedule-add-control > .ui.dropdown { justify-self: start; margin: 0; }
-    .schedule-add-control > .ui.dropdown .menu { width: min(22rem, calc(100vw - 2.5rem)); border-color: var(--strong-border); background: var(--detail-surface); box-shadow: 0 .75rem 2rem var(--pane-shadow); }
-    .schedule-add-control > .ui.dropdown .menu > .item { display: flex; align-items: center; gap: .5rem; width: 100%; border-radius: 0; color: var(--foreground); text-align: left; }
-    .schedule-add-control > .ui.dropdown .menu > .item:hover,
-    .schedule-add-control > .ui.dropdown .menu > .selected.item { color: var(--foreground); background: var(--raised-surface); }
-    .schedule-add-control > .ui.dropdown .menu > .item > span { display: grid; gap: .12rem; }
-    .schedule-add-control > .ui.dropdown .menu > .item small { color: var(--muted); font-size: .68rem; font-weight: 500; }
+    .device-pane .schedule-add-dropdown { position: relative; justify-self: stretch; margin: 0; padding: 0; border: 0; background: transparent; }
+    .schedule-add-dropdown > summary { list-style: none; margin: 0; }
+    .schedule-add-dropdown > summary::-webkit-details-marker { display: none; }
+    .schedule-add-menu { position: absolute; z-index: 1; bottom: calc(100% + .35rem); left: 0; display: grid; overflow: hidden; width: 100%; padding: .35rem 0; border: 1px solid var(--strong-border); border-radius: .4rem; background: var(--detail-surface); box-shadow: 0 .75rem 2rem var(--pane-shadow); }
+    .schedule-add-control:has(.schedule-add-form[open]) .schedule-add-menu { top: calc(100% + .35rem); bottom: auto; }
+    .schedule-add-option { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .7rem 1rem; border-radius: 0; color: var(--foreground); background: transparent; font-weight: 400; text-align: left; }
+    .schedule-add-option:hover { color: var(--foreground); background: var(--raised-surface); transform: none; }
+    .schedule-add-option > span { display: grid; gap: .12rem; }
+    .schedule-add-option small { color: var(--muted); font-size: .68rem; font-weight: 500; }
     .schedule-add-forms { display: contents; }
     .schedule-add-form:not([open]) { display: none; }
     .device-pane .schedule-add-form { margin: 0; padding: .85rem; }
@@ -607,7 +607,6 @@
         const pane = document.getElementById("device-pane");
         restorePaneWidth(pane);
         pane.showModal();
-        initializeSemanticControls(pane);
         formatEventTimes(pane);
         pane.querySelectorAll(".light-rule-form").forEach(updateLightRuleForm);
       }
@@ -662,15 +661,6 @@
       const end = boundaryDescription(form, "end");
       form.querySelector(".window-preview").textContent =
         "Active daily from " + start + " until " + end + ".";
-    }
-
-    function initializeSemanticControls(root) {
-      $(root).find(".schedule-add-dropdown").dropdown({
-        action: "hide",
-        onChange: function (value) {
-          openAddSchedule(value);
-        }
-      });
     }
 
     function setCalendarView(button, view) {
@@ -787,7 +777,7 @@
       control.querySelectorAll(".schedule-add-form[open]").forEach(function (openForm) {
         openForm.open = false;
       });
-      $(control.querySelector(".schedule-add-dropdown")).dropdown("hide");
+      control.querySelector(".schedule-add-dropdown").open = false;
       form.open = true;
       form.scrollIntoView({ behavior: "smooth", block: "nearest" });
       form.querySelector("input, select, button")?.focus({ preventScroll: true });
@@ -805,6 +795,11 @@
           pane.close();
           return;
         }
+      }
+      const scheduleOption = event.target.closest("[data-schedule-form]");
+      if (scheduleOption) {
+        openAddSchedule(scheduleOption.dataset.scheduleForm);
+        return;
       }
       const entry = event.target.closest("[data-calendar-entry]");
       if (entry) selectCalendarEntry(entry);

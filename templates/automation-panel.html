@@ -160,16 +160,18 @@
 
   {% if panel.location_available %}
     <div class="schedule-add-control">
-      <div class="ui primary floating dropdown button schedule-add-dropdown schedule-add-button" role="button" tabindex="0" aria-label="Add schedule" aria-haspopup="menu" aria-controls="schedule-add-menu">
-        <i class="plus icon" aria-hidden="true"></i>
-        <span class="text">Add schedule</span>
-        <i class="dropdown icon" aria-hidden="true"></i>
-        <div id="schedule-add-menu" class="menu schedule-add-menu" role="menu">
-          <div class="item" role="menuitem" data-value="add-fixed-schedule"><i class="clock outline icon" aria-hidden="true"></i><span><strong>Fixed time</strong><small>Run at a chosen time</small></span></div>
-          <div class="item" role="menuitem" data-value="add-solar-schedule"><i class="sun outline icon" aria-hidden="true"></i><span><strong>Sunrise or sunset</strong><small>Follow local daylight</small></span></div>
-          <div class="item" role="menuitem" data-value="add-light-schedule"><i class="lightbulb outline icon" aria-hidden="true"></i><span><strong>Outdoor light</strong><small>React to measured light</small></span></div>
+      <details class="schedule-add-dropdown">
+        <summary class="ui primary button schedule-add-button" aria-controls="schedule-add-menu">
+          <i class="plus icon" aria-hidden="true"></i>
+          <span>Add schedule</span>
+          <i class="dropdown icon" aria-hidden="true"></i>
+        </summary>
+        <div id="schedule-add-menu" class="schedule-add-menu">
+          <button class="schedule-add-option" type="button" data-schedule-form="add-fixed-schedule"><i class="clock outline icon" aria-hidden="true"></i><span><strong>Fixed time</strong><small>Run at a chosen time</small></span></button>
+          <button class="schedule-add-option" type="button" data-schedule-form="add-solar-schedule"><i class="sun outline icon" aria-hidden="true"></i><span><strong>Sunrise or sunset</strong><small>Follow local daylight</small></span></button>
+          <button class="schedule-add-option" type="button" data-schedule-form="add-light-schedule"><i class="lightbulb outline icon" aria-hidden="true"></i><span><strong>Outdoor light</strong><small>React to measured light</small></span></button>
         </div>
-      </div>
+      </details>
       <div class="schedule-add-forms">
     <details id="add-fixed-schedule" class="schedule-add-form">
       <summary>Add fixed-time schedule</summary>

@@ -3014,6 +3014,9 @@ mod tests {
             .unwrap();
 
         assert!(page.contains("htmx.org@4.0.0/dist/htmx.min.js"));
+        assert!(page.contains("semantic-ui@2.5.0/dist/semantic.min.css"));
+        assert!(!page.contains("jquery@"));
+        assert!(!page.contains("semantic-ui@2.5.0/dist/semantic.min.js"));
         assert!(page.contains("{\"noSwap\":[204,304,\"4xx\",\"5xx\"]}"));
         assert!(page.contains("htmx:before:request"));
         assert!(page.contains("htmx:finally:request"));
@@ -3337,14 +3340,12 @@ mod tests {
 
         assert!(fragment.contains("No timed schedules yet"));
         assert!(!fragment.contains("openScheduleAddMenu"));
+        assert!(fragment.contains("<details class=\"schedule-add-dropdown\">"));
+        assert!(fragment.contains("<summary class=\"ui primary button schedule-add-button\""));
+        assert!(fragment.contains("id=\"schedule-add-menu\" class=\"schedule-add-menu\""));
         assert!(fragment.contains(
-            "class=\"ui primary floating dropdown button schedule-add-dropdown schedule-add-button\""
+            "<button class=\"schedule-add-option\" type=\"button\" data-schedule-form=\"add-fixed-schedule\""
         ));
-        assert!(fragment
-            .contains("id=\"schedule-add-menu\" class=\"menu schedule-add-menu\" role=\"menu\""));
-        assert!(fragment
-            .contains("<div class=\"item\" role=\"menuitem\" data-value=\"add-fixed-schedule\""));
-        assert!(!fragment.contains("<button class=\"item\""));
         assert!(fragment.contains("class=\"field\"><label for=\"new-fixed-name\""));
         assert!(fragment.contains("id=\"add-fixed-schedule\" class=\"schedule-add-form\""));
         assert!(fragment.contains("id=\"add-solar-schedule\" class=\"schedule-add-form\""));
