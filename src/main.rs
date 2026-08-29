@@ -2871,6 +2871,12 @@ mod tests {
         assert!(fragment.contains("aria-label=\"Resize group pane\""));
         assert!(fragment.contains("aria-labelledby=\"group-pane-title group-pane-description\""));
         assert!(fragment.contains("placeholder=\"Living room\" autofocus"));
+        assert!(fragment.contains("hx-disable=\"find button\""));
+        assert!(fragment.contains("hx-on::after:request"));
+        assert!(fragment.contains("event.detail.ctx.response.raw.ok"));
+        assert!(!fragment.contains("hx-disabled-elt"));
+        assert!(!fragment.contains("hx-on::after-request"));
+        assert!(!fragment.contains("event.detail.successful"));
     }
 
     #[test]
@@ -2964,6 +2970,19 @@ mod tests {
             .render(context! { plugs })
             .unwrap();
 
+        assert!(page.contains("htmx.org@4.0.0/dist/htmx.min.js"));
+        assert!(page.contains("{\"noSwap\":[204,304,\"4xx\",\"5xx\"]}"));
+        assert!(page.contains("htmx:before:request"));
+        assert!(page.contains("htmx:finally:request"));
+        assert!(page.contains("htmx:response:error"));
+        assert!(page.contains("event.detail.ctx.sourceElement"));
+        assert!(page.contains("event.detail.dropRequest"));
+        assert!(!page.contains("htmx.org@2."));
+        assert!(!page.contains("hx-disabled-elt"));
+        assert!(!page.contains("htmx:beforeRequest"));
+        assert!(!page.contains("htmx:afterRequest"));
+        assert!(!page.contains("htmx:responseError"));
+        assert!(!page.contains("htmx:afterSwap"));
         assert!(page.contains("hx-post=\"/scan\""));
         assert!(page.contains("hx-get=\"/groups/new\""));
         assert!(page.contains("hx-post=\"/plugs/192.0.2.1/relay\""));

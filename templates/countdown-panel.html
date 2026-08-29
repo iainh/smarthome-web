@@ -15,7 +15,7 @@
       </div>
       {% if rule.id %}
         <div class="extra content">
-          <button class="ui fluid negative button small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/countdown/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Cancel this timer?" hx-disabled-elt="this"><i class="stop circle outline icon" aria-hidden="true"></i>Cancel timer</button>
+          <button class="ui fluid negative button small-button danger" type="button" hx-delete="/plugs/{{ panel.address }}/countdown/{{ rule.id }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Cancel this timer?" hx-disable="this"><i class="stop circle outline icon" aria-hidden="true"></i>Cancel timer</button>
         </div>
       {% endif %}
     </article>
@@ -23,7 +23,7 @@
     <p class="schedule-status">No countdown timer is active.</p>
   {% endfor %}
 
-  <form class="ui form schedule-form" hx-post="/plugs/{{ panel.address }}/countdown" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+  <form class="ui form schedule-form" hx-post="/plugs/{{ panel.address }}/countdown" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
     <div class="field">
       <label for="countdown-minutes">After</label>
       <div class="ui right labeled input">

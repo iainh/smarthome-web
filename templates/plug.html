@@ -6,7 +6,7 @@
       {% else %}
         <span class="ui mini red label state state-off">Off</span>
       {% endif %}
-      <button class="ui basic icon button remove-device" type="button" aria-label="Remove {{ plug.alias }} from inventory" title="Remove device" hx-delete="/devices/{{ plug.device_id }}" hx-target="#plug-list" hx-swap="outerHTML" hx-confirm="Remove this device from the remembered inventory? A later scan can add it again." hx-disabled-elt="this">
+      <button class="ui basic icon button remove-device" type="button" aria-label="Remove {{ plug.alias }} from inventory" title="Remove device" hx-delete="/devices/{{ plug.device_id }}" hx-target="#plug-list" hx-swap="outerHTML" hx-confirm="Remove this device from the remembered inventory? A later scan can add it again." hx-disable="this">
         <i class="trash alternate outline icon" aria-hidden="true"></i>
       </button>
     </div>
@@ -23,7 +23,7 @@
   </div>
   <div class="content">
     {% if plug.brightness is not none %}
-      <form class="dimmer-control" hx-post="/plugs/{{ plug.address }}/brightness" hx-trigger="change" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find input">
+      <form class="dimmer-control" hx-post="/plugs/{{ plug.address }}/brightness" hx-trigger="change" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find input">
         <label for="brightness-{{ plug.address }}">
           <span>Brightness</span>
           <output for="brightness-{{ plug.address }}">{{ plug.brightness }}%</output>
@@ -31,7 +31,7 @@
         <input id="brightness-{{ plug.address }}" type="range" name="brightness" min="1" max="100" value="{{ plug.brightness }}" aria-label="Brightness for {{ plug.alias }}" oninput="this.previousElementSibling.querySelector('output').value = this.value + '%'">
       </form>
     {% endif %}
-    <form hx-post="/plugs/{{ plug.address }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <form hx-post="/plugs/{{ plug.address }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
       {% if plug.relay_on %}
         <button class="ui fluid negative button toggle toggle-off" type="submit" name="on" value="false"><i class="power off icon" aria-hidden="true"></i><span class="button-label">Turn off</span></button>
       {% else %}
@@ -41,11 +41,11 @@
   </div>
   <div class="extra content">
     <div class="plug-actions">
-      <button class="ui button automation-button" type="button" hx-get="/plugs/{{ plug.address }}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+      <button class="ui button automation-button" type="button" hx-get="/plugs/{{ plug.address }}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this">
         <i class="calendar alternate outline icon" aria-hidden="true"></i>
         <span class="button-label">Automations</span>
       </button>
-      <button class="ui button" type="button" hx-get="/plugs/{{ plug.address }}/countdown" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+      <button class="ui button" type="button" hx-get="/plugs/{{ plug.address }}/countdown" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this">
         <i class="clock outline icon" aria-hidden="true"></i>
         <span class="button-label">Set timer</span>
       </button>

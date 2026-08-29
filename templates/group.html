@@ -10,18 +10,18 @@
   </div>
   <div class="content">
     <div class="group-relay-actions">
-      <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
+      <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
         <button class="ui fluid primary button toggle" type="submit" name="on" value="true"><i class="power off icon" aria-hidden="true"></i>Turn on</button>
       </form>
-      <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button">
+      <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
         <button class="ui fluid negative button toggle toggle-off" type="submit" name="on" value="false"><i class="power off icon" aria-hidden="true"></i>Turn off</button>
       </form>
     </div>
   </div>
   <div class="extra content">
     <div class="plug-actions">
-      <button class="ui button automation-button" type="button" hx-get="/groups/{{ group.id }}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="calendar alternate outline icon" aria-hidden="true"></i><span class="button-label">Automations</span></button>
-      <button class="ui button small-button group-edit" type="button" hx-get="/groups/{{ group.id }}" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="edit outline icon" aria-hidden="true"></i><span class="button-label">Edit group</span></button>
+      <button class="ui button automation-button" type="button" hx-get="/groups/{{ group.id }}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this"><i class="calendar alternate outline icon" aria-hidden="true"></i><span class="button-label">Automations</span></button>
+      <button class="ui button small-button group-edit" type="button" hx-get="/groups/{{ group.id }}" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this"><i class="edit outline icon" aria-hidden="true"></i><span class="button-label">Edit group</span></button>
     </div>
   </div>
 </article>

@@ -12,6 +12,7 @@
   <meta name="application-name" content="SmartHome Web">
   <meta name="msapplication-TileColor" content="#0f172a">
   <meta name="msapplication-TileImage" content="/assets/icons/icon-144.png">
+  <meta name="htmx-config" content='{"noSwap":[204,304,"4xx","5xx"]}'>
   <title>SmartHome Web</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/assets/icons/icon.svg" type="image/svg+xml">
@@ -22,7 +23,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.css">
   <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
-  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx.org@4.0.0/dist/htmx.min.js"></script>
   <script>
     try {
       const savedTheme = window.localStorage.getItem("kasa-theme");
@@ -428,7 +429,7 @@
       </div>
       <div class="header-actions">
         <button class="ui basic button install-app" type="button" hidden><i class="download icon" aria-hidden="true"></i>Install app</button>
-        <button class="ui basic button activity-button" type="button" hx-get="/events" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+        <button class="ui basic button activity-button" type="button" hx-get="/events" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this">
           <i class="history icon" aria-hidden="true"></i>
           <span class="button-label">Activity</span>
         </button>
@@ -436,11 +437,11 @@
           <i class="adjust icon" aria-hidden="true"></i>
           <span class="theme-label">Switch to dark theme</span>
         </button>
-        <button class="ui primary button add-group" type="button" hx-get="/groups/new" hx-target="#device-pane" hx-swap="outerHTML" hx-disabled-elt="this">
+        <button class="ui primary button add-group" type="button" hx-get="/groups/new" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this">
           <i class="users icon" aria-hidden="true"></i>
           <span class="button-label">Add group</span>
         </button>
-        <button class="ui button scan" hx-post="/scan" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="this">
+        <button class="ui button scan" hx-post="/scan" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="this">
           <i class="search icon" aria-hidden="true"></i>
           <span class="button-label">Scan for devices</span>
           <span class="request-label">Scanning…</span>
@@ -558,43 +559,51 @@
       });
     }
 
-    function requestConfirmation(message, action) {
+    function requestConfirmation(message, confirmAction, cancelAction = function () {}) {
       confirmationDialog.querySelector(".confirmation-message").textContent = message;
       confirmationDialog.returnValue = "";
-      pendingConfirmation = action;
+      pendingConfirmation = { confirmAction, cancelAction };
       confirmationDialog.showModal();
     }
 
     confirmationDialog.addEventListener("close", function () {
-      const action = pendingConfirmation;
+      const confirmation = pendingConfirmation;
       pendingConfirmation = null;
-      if (confirmationDialog.returnValue === "confirm" && action) action();
+      if (!confirmation) return;
+      if (confirmationDialog.returnValue === "confirm") confirmation.confirmAction();
+      else confirmation.cancelAction();
     });
 
     document.body.addEventListener("htmx:confirm", function (event) {
-      if (!event.detail.question) return;
       event.preventDefault();
-      requestConfirmation(event.detail.question, function () {
-        event.detail.issueRequest(true);
-      });
+      requestConfirmation(
+        event.detail.ctx.confirm,
+        event.detail.issueRequest,
+        event.detail.dropRequest
+      );
     });
-    document.body.addEventListener("htmx:beforeRequest", function (event) {
-      const button = event.detail.elt.matches("button")
-        ? event.detail.elt
-        : event.detail.elt.querySelector("button[type='submit']");
+    document.body.addEventListener("htmx:before:request", function (event) {
+      const source = event.detail.ctx.sourceElement;
+      const button = source.matches("button")
+        ? source
+        : source.querySelector("button[type='submit']");
       if (button) button.setAttribute("aria-busy", "true");
     });
-    document.body.addEventListener("htmx:afterRequest", function (event) {
-      const button = event.detail.elt.matches("button")
-        ? event.detail.elt
-        : event.detail.elt.querySelector("button[type='submit']");
+    document.body.addEventListener("htmx:finally:request", function (event) {
+      const source = event.detail.ctx.sourceElement;
+      const button = source.matches("button")
+        ? source
+        : source.querySelector("button[type='submit']");
       if (button) button.removeAttribute("aria-busy");
     });
-    document.body.addEventListener("htmx:responseError", function (event) {
-      showError(event.detail.xhr.responseText || "The device request failed.");
+    document.body.addEventListener("htmx:response:error", function (event) {
+      showError(event.detail.ctx.text || "The device request failed.");
     });
-    document.body.addEventListener("htmx:afterSwap", function (event) {
-      if (event.detail.target.id === "device-pane") {
+    document.body.addEventListener("htmx:error", function (event) {
+      showError(event.detail.error?.message || "The device request failed.");
+    });
+    document.body.addEventListener("htmx:after:swap", function (event) {
+      if (event.detail.ctx.target.id === "device-pane") {
         const pane = document.getElementById("device-pane");
         restorePaneWidth(pane);
         pane.showModal();
@@ -747,11 +756,12 @@
       const enabled = selection.dataset.enabled === "true";
       button.disabled = true;
       htmx.ajax("POST", calendar.dataset.automationBase + "/" + selection.dataset.ruleId + "/enabled", {
+        source: button,
         target: "#device-pane",
         swap: "outerHTML",
         values: { on: String(!enabled) }
-      }).catch(function () {
-        button.disabled = false;
+      }).finally(function () {
+        if (button.isConnected) button.disabled = false;
       });
     }
 
@@ -761,10 +771,11 @@
         const calendar = selection.closest(".week-calendar");
         button.disabled = true;
         htmx.ajax("DELETE", calendar.dataset.automationBase + "/" + selection.dataset.ruleId, {
+          source: button,
           target: "#device-pane",
           swap: "outerHTML"
-        }).catch(function () {
-          button.disabled = false;
+        }).finally(function () {
+          if (button.isConnected) button.disabled = false;
         });
       });
     }

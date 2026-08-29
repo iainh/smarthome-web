@@ -88,7 +88,7 @@
       <details class="schedule-editor" id="schedule-editor-{{ rule.id }}">
         <summary>Edit schedule</summary>
         {% if rule.kind == "fixed" %}
-          <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+          <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
             <div class="field"><label for="fixed-name-{{ rule.id }}">Name</label><input id="fixed-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
             <div class="field"><label for="fixed-time-{{ rule.id }}">Time</label><input id="fixed-time-{{ rule.id }}" name="time" type="time" required value="{{ rule.time }}"></div>
             <div class="field"><label for="fixed-action-{{ rule.id }}">Action</label><select id="fixed-action-{{ rule.id }}" name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></div>
@@ -105,7 +105,7 @@
             <button class="ui primary button small-button" type="submit"><i class="save outline icon" aria-hidden="true"></i>Save changes</button>
           </form>
         {% elif rule.kind == "solar" %}
-          <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+          <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
             <div class="field"><label for="solar-name-{{ rule.id }}">Name</label><input id="solar-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
             <div class="field"><label for="solar-event-{{ rule.id }}">Event</label><select id="solar-event-{{ rule.id }}" name="event"><option value="sunrise"{% if rule.event == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.event == "sunset" %} selected{% endif %}>Sunset</option></select></div>
             <div class="field"><label for="solar-offset-{{ rule.id }}">Offset in minutes</label><input id="solar-offset-{{ rule.id }}" name="offset_minutes" type="number" min="-180" max="180" required value="{{ rule.offset_minutes }}"></div>
@@ -123,7 +123,7 @@
             <button class="ui primary button small-button" type="submit"><i class="save outline icon" aria-hidden="true"></i>Save changes</button>
           </form>
         {% else %}
-          <form class="ui form schedule-form light-rule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
+          <form class="ui form schedule-form light-rule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
             <div class="field"><label for="light-name-{{ rule.id }}">Name</label><input id="light-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
             <div class="two fields form-row">
               <div class="field"><label for="light-on-below-{{ rule.id }}">Turn on at or below</label><span class="unit-input"><input id="light-on-below-{{ rule.id }}" name="on_below" type="number" min="0" max="1499" step="1" required value="{{ rule.on_below }}"><span>W/m²</span></span></div>
@@ -174,7 +174,7 @@
     <details id="add-fixed-schedule" class="schedule-add-form">
       <summary>Add fixed-time schedule</summary>
       <h3 class="schedule-add-title">Add fixed-time schedule</h3>
-      <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+      <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
         <div class="field"><label for="new-fixed-name">Name</label><input id="new-fixed-name" name="name" maxlength="64" required placeholder="Weekday morning"></div>
         <div class="field"><label for="new-fixed-time">Time</label><input id="new-fixed-time" name="time" type="time" required value="07:00"></div>
         <div class="field">
@@ -201,7 +201,7 @@
     <details id="add-solar-schedule" class="schedule-add-form">
       <summary>Add sunrise or sunset schedule</summary>
       <h3 class="schedule-add-title">Add sunrise or sunset schedule</h3>
-      <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button">
+      <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
         <div class="field"><label for="new-solar-name">Name</label><input id="new-solar-name" name="name" maxlength="64" required placeholder="Evening lights"></div>
         <div class="field">
           <label for="new-solar-event">Event</label>
@@ -239,7 +239,7 @@
     <details id="add-light-schedule" class="schedule-add-form light-rule-details">
       <summary>Add outdoor-light rule</summary>
       <h3 class="schedule-add-title">Add outdoor-light rule</h3>
-      <form class="ui form schedule-form light-rule-form" hx-post="{{ panel.automation_base | safe }}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
+      <form class="ui form schedule-form light-rule-form" hx-post="{{ panel.automation_base | safe }}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
         <p class="light-rule-intro">Control covered devices when daylight drops within a chosen time window.</p>
         <div class="field"><label for="new-light-name">Name</label><input id="new-light-name" name="name" maxlength="64" required value="Outdoor light"></div>
 
@@ -330,7 +330,7 @@
       <div class="content">
         <div class="weather-header">
           <h3 class="header">Current conditions</h3>
-          <button class="ui mini button small-button" type="button" hx-get="{{ panel.automation_base | safe }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disabled-elt="this"><i class="sync alternate icon" aria-hidden="true"></i>Refresh</button>
+          <button class="ui mini button small-button" type="button" hx-get="{{ panel.automation_base | safe }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="this"><i class="sync alternate icon" aria-hidden="true"></i>Refresh</button>
         </div>
         {% if panel.weather %}
           <dl class="weather-grid">
@@ -410,7 +410,7 @@
         </article>
       {% endfor %}
       {% if panel.schedules.migratable_count > 0 and panel.location_available %}
-        <form hx-post="{{ panel.automation_base | safe }}/migrate" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Import compatible schedules to the server and remove their originals from the plug?" hx-disabled-elt="find button">
+        <form hx-post="{{ panel.automation_base | safe }}/migrate" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Import compatible schedules to the server and remove their originals from the plug?" hx-disable="find button">
           <button class="ui primary fluid button small-button migration-button" type="submit"><i class="download icon" aria-hidden="true"></i>Migrate {{ panel.schedules.migratable_count }} compatible schedule{% if panel.schedules.migratable_count != 1 %}s{% endif %}</button>
         </form>
       {% elif panel.schedules.migratable_count > 0 %}

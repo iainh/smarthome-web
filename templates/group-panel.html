@@ -8,7 +8,7 @@
     <button class="ui basic icon button pane-close" type="button" aria-label="Close group pane" onclick="this.closest('dialog').close()"><i class="close icon" aria-hidden="true"></i></button>
   </div>
 
-  <form class="ui form schedule-form" hx-post="{% if panel.editing %}/groups/{{ panel.id }}{% else %}/groups{% endif %}" hx-target="#plug-list" hx-swap="outerHTML" hx-disabled-elt="find button" hx-on::after-request="if(event.detail.successful) this.closest('dialog').close()">
+  <form class="ui form schedule-form" hx-post="{% if panel.editing %}/groups/{{ panel.id }}{% else %}/groups{% endif %}" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button" hx-on::after:request="if(event.detail.ctx.response.raw.ok) this.closest('dialog').close()">
     <div class="field">
       <label for="group-name">Group name</label>
       <input id="group-name" name="name" maxlength="64" required value="{{ panel.name }}" placeholder="Living room" autofocus>
@@ -31,6 +31,6 @@
   </form>
 
   {% if panel.editing %}
-    <button class="ui fluid negative button small-button danger group-delete" type="button" hx-delete="/groups/{{ panel.id }}" hx-target="#plug-list" hx-swap="outerHTML" hx-confirm="Delete this group? Devices will not be removed." hx-disabled-elt="this" hx-on::after-request="if(event.detail.successful) this.closest('dialog').close()"><i class="trash alternate outline icon" aria-hidden="true"></i>Delete group</button>
+    <button class="ui fluid negative button small-button danger group-delete" type="button" hx-delete="/groups/{{ panel.id }}" hx-target="#plug-list" hx-swap="outerHTML" hx-confirm="Delete this group? Devices will not be removed." hx-disable="this" hx-on::after:request="if(event.detail.ctx.response.raw.ok) this.closest('dialog').close()"><i class="trash alternate outline icon" aria-hidden="true"></i>Delete group</button>
   {% endif %}
 </dialog>
