@@ -195,7 +195,7 @@
     .weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .3rem; }
     .weekday { position: relative; display: grid; place-items: center; min-width: 0; padding: .55rem .1rem; border: 1px solid var(--strong-border); border-radius: .5rem; color: var(--muted); cursor: pointer; font-size: .7rem; font-weight: 700; transition: background .15s, border-color .15s, color .15s; }
     .weekday:hover { border-color: #64748b; color: var(--foreground); }
-    .weekday:has(input:checked) { border-color: #3b82f6; color: #eff6ff; background: #2563eb; }
+    .ui.form .weekday:has(input:checked) { border-color: #3b82f6; color: #eff6ff; background: #2563eb; }
     .weekday:has(input:focus-visible) { outline: 2px solid #7dd3fc; outline-offset: 2px; }
     .weekday input { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
     .advanced-note { margin: 0; color: var(--warning); font-size: .75rem; }
