@@ -731,7 +731,7 @@ async fn create_group(
         plugs.iter().map(|plug| plug.device_id.as_str()),
     )?;
     state.groups.add(&name, device_ids).map_err(group_error)?;
-    render_device_list(
+    render_group_result(
         &state,
         device_list_view(
             &state,
@@ -763,7 +763,7 @@ async fn update_group(
     {
         return Err(AppError::not_found(format!("group {id} was not found")));
     }
-    render_device_list(
+    render_group_result(
         &state,
         device_list_view(
             &state,
@@ -782,7 +782,7 @@ async fn delete_group(
         return Err(AppError::not_found(format!("group {id} was not found")));
     }
     let view = load_device_list(&state, Some(format!("Deleted group “{}”.", group.name)))?;
-    render_device_list(&state, view)
+    render_group_result(&state, view)
 }
 
 async fn set_group_relay(
@@ -2633,6 +2633,14 @@ fn render_device_list(state: &AppState, view: DeviceListView) -> Result<Html<Str
     Ok(Html(fragment))
 }
 
+fn render_group_result(state: &AppState, view: DeviceListView) -> Result<Html<String>, AppError> {
+    let fragment = state
+        .templates
+        .get_template("group-result.html")?
+        .render(context! { groups => view.groups, plugs => view.plugs, notice => view.notice })?;
+    Ok(Html(fragment))
+}
+
 fn render_group_panel(state: &AppState, panel: GroupPanel) -> Result<Html<String>, AppError> {
     let fragment = state
         .templates
@@ -2682,6 +2690,10 @@ fn templates() -> Result<Environment<'static>, minijinja::Error> {
     templates.add_template(
         "group-panel.html",
         include_str!("../templates/group-panel.html"),
+    )?;
+    templates.add_template(
+        "group-result.html",
+        include_str!("../templates/group-result.html"),
     )?;
     templates.add_template(
         "automation-panel.html",
@@ -2872,11 +2884,42 @@ mod tests {
         assert!(fragment.contains("aria-labelledby=\"group-pane-title group-pane-description\""));
         assert!(fragment.contains("placeholder=\"Living room\" autofocus"));
         assert!(fragment.contains("hx-disable=\"find button\""));
-        assert!(fragment.contains("hx-on::after:request"));
-        assert!(fragment.contains("event.detail.ctx.response.raw.ok"));
+        assert!(!fragment.contains("hx-on::after:request"));
         assert!(!fragment.contains("hx-disabled-elt"));
         assert!(!fragment.contains("hx-on::after-request"));
         assert!(!fragment.contains("event.detail.successful"));
+    }
+
+    #[test]
+    fn group_result_routes_partial_updates_and_closes_the_device_pane() {
+        let groups = vec![GroupView {
+            id: 3,
+            name: "Living room".to_owned(),
+            member_count: 1,
+            reachable_count: 1,
+            members: "Desk lamp".to_owned(),
+            state: "On",
+            state_class: "state-on",
+            has_offline_members: false,
+        }];
+
+        let fragment = templates()
+            .unwrap()
+            .get_template("group-result.html")
+            .unwrap()
+            .render(
+                context! { groups, plugs => Vec::<PlugView>::new(), notice => "Updated group." },
+            )
+            .unwrap();
+
+        assert!(fragment.contains("<hx-partial id=\"plug-list\" hx-swap=\"outerHTML\">"));
+        assert!(fragment.contains("<section id=\"plug-list\""));
+        assert!(fragment.contains("Updated group."));
+        assert!(fragment.contains("Living room"));
+        assert!(fragment.contains("<hx-partial id=\"device-pane\" hx-swap=\"outerHTML\">"));
+        assert!(fragment.contains(
+            "<dialog id=\"device-pane\" class=\"device-pane\" aria-label=\"Device controls\"></dialog>"
+        ));
     }
 
     #[test]
