@@ -33,15 +33,14 @@
   <style>
     :root {
       color-scheme: light dark;
-      --background: #0f172a;
-      --background-gradient: #1e3a5f;
+      --background: #121b1a;
       --foreground: #e2e8f0;
       --muted: #94a3b8;
       --subtle-foreground: #cbd5e1;
       --border: #334155;
       --strong-border: #475569;
-      --surface: rgb(15 23 42 / 78%);
-      --raised-surface: #1e293b;
+      --surface: #1b2725;
+      --raised-surface: #243330;
       --detail-surface: #111c30;
       --control-surface: #334155;
       --secondary-control: #475569;
@@ -62,17 +61,16 @@
     :root[data-theme="dark"] { color-scheme: dark; }
     :root[data-theme="light"] {
       color-scheme: light;
-      --background: #f8fafc;
-      --background-gradient: #dbeafe;
-      --foreground: #0f172a;
+      --background: #f5f6f3;
+      --foreground: #23352f;
       --muted: #475569;
       --subtle-foreground: #334155;
-      --border: #cbd5e1;
+      --border: #dde3dc;
       --strong-border: #94a3b8;
-      --surface: rgb(255 255 255 / 88%);
-      --raised-surface: #e2e8f0;
-      --detail-surface: #f1f5f9;
-      --control-surface: #e2e8f0;
+      --surface: #fff;
+      --raised-surface: #edf1eb;
+      --detail-surface: #f5f7f3;
+      --control-surface: #edf1eb;
       --secondary-control: #475569;
       --input-surface: #fff;
       --backdrop: rgb(15 23 42 / 38%);
@@ -87,11 +85,11 @@
     }
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
-    body { margin: 0; min-height: 100vh; color: var(--foreground); background: radial-gradient(circle at top, var(--background-gradient), var(--background) 45%); }
-    .ui.container.app-container { padding: 3rem 0; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 2rem; }
+    body { margin: 0; min-height: 100vh; font-family: inherit; color: var(--foreground); background: var(--background); }
+    .ui.container.app-container { padding: 2.5rem 0 4rem; }
+    header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1.5rem; margin-bottom: 2rem; }
     .header-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
-    h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 3rem); letter-spacing: -0.04em; }
+    h1 { margin: 0; font-family: inherit; font-size: clamp(2.2rem, 5vw, 3.3rem); font-weight: 600; letter-spacing: -0.05em; }
     .subtitle { margin: .35rem 0 0; color: var(--muted); }
     button { border: 0; border-radius: .75rem; padding: .75rem 1rem; font-family: inherit; font-size: 10pt; font-weight: 700; cursor: pointer; transition: transform .15s, opacity .15s; }
     button:hover { transform: translateY(-1px); }
@@ -131,8 +129,6 @@
     .plug-actions .automation-button { color: #fff; background: #475569; }
     .group-members { margin: 0; color: var(--subtle-foreground); font-size: .85rem; }
     .group-warning { margin: 0; color: var(--warning); font-size: .78rem; line-height: 1.4; }
-    .group-relay-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-    .group-relay-actions .toggle { width: 100%; }
     .group-edit { width: 100%; }
     .ui.message.operation-notice { margin: 0; padding: .8rem 1rem; border: 1px solid var(--notice-border); border-radius: .75rem; color: var(--notice-foreground); background: var(--notice-background); }
     .ui.message.operation-notice p { color: inherit; }
@@ -402,10 +398,10 @@
     .ui.basic.button { color: var(--foreground) !important; box-shadow: 0 0 0 1px var(--strong-border) inset; }
     .ui.basic.button:hover { color: var(--foreground) !important; background: var(--raised-surface) !important; }
     .ui.basic.label { color: var(--subtle-foreground); border-color: var(--strong-border); background: var(--control-surface); }
-    .ui.cards.plug-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; margin: 0; }
+    .ui.cards.plug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); gap: 1.25rem; margin: 0; }
     .ui.cards.plug-grid::after { display: none; }
     .ui.cards.plug-grid > .ui.card { width: 100%; margin: 0; }
-    .ui.card.plug-card { border: 1px solid var(--border); border-radius: 1rem; background: var(--surface); box-shadow: 0 1rem 2rem var(--shadow); }
+    .ui.card.plug-card { min-width: 0; border: 1px solid var(--border); border-radius: 1.25rem; background: var(--surface); box-shadow: 0 3px 8px rgb(0 0 0 / 3%); }
     .ui.card.plug-card > .content, .ui.card.plug-card > .extra.content,
     .ui.card.timer-rule > .content, .ui.card.timer-rule > .extra.content,
     .ui.card.schedule-rule > .content { border-color: var(--border); background: transparent; }
@@ -413,19 +409,55 @@
     .ui.card.weather-card .weather-grid { margin-top: .75rem; }
     .ui.card.timer-rule, .ui.card.schedule-rule { width: 100%; background: var(--raised-surface); }
     .ui.segment.week-calendar { background: var(--surface); }
-    .ui.label.state.state-on { color: #052e16; background: #86efac; }
-    .ui.label.state.state-off { color: #450a0a; background: #fca5a5; }
+    .ui.label.state.state-on { color: #186346; background: #dcf3e6; }
+    .ui.label.state.state-off { color: #52605a; background: #e9ede9; }
     .ui.label.state.state-mixed { color: #422006; background: #fde68a; }
     .ui.label.state.state-unavailable { color: #fff; background: #475569; }
     .ui.label.state { margin: 0; }
+    .device-symbol { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; color: #24674d; background: #e5efe3; }
+    .device-symbol i.icon { margin: 0; }
+    .header-actions { width: 100%; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+    .header-actions .scan { margin-left: auto; }
+    .ui.button { border-radius: .7rem; font-weight: 600; transition: background .15s, transform .15s; }
+    .ui.primary.button { background: #28674e; color: #fff; }
+    .ui.primary.button:hover { background: #1c503b; }
+    .ui.card.plug-card > .content { padding: 1.35rem; }
+    .ui.card.plug-card > .content:first-child { flex-grow: 1; }
+    .ui.card.plug-card > .content:not(:first-child) { flex-grow: 0; }
+    .ui.card.plug-card > .extra.content { padding: .85rem 1.35rem; background: var(--detail-surface); }
+    .device-symbol { margin-bottom: 1.1rem; font-size: 1.25rem; }
+    .ui.card.plug-card .header { font-family: inherit; font-size: 1.25rem; font-weight: 650; overflow-wrap: anywhere; }
+    .ui.card.plug-card .model { margin-top: .4rem; font-size: .8rem; }
+    .device-details { margin-top: 1.2rem; font-size: .8rem; color: var(--muted); }
+    .device-details summary { cursor: pointer; }
+    .ui.card.plug-card .toggle { min-height: 44px; }
+    .ui.card.plug-card .toggle-off { color: var(--foreground); background: var(--control-surface); }
+    .ui.card.plug-card .toggle-off:hover { background: var(--border); }
+    .plug-actions .ui.button { margin: 0; padding: .85rem .4rem; font-size: .8rem; background: transparent; color: var(--subtle-foreground); }
+    .plug-actions .ui.button:hover { background: var(--control-surface); }
+    .section-heading { font-family: inherit; font-size: 1.15rem; font-weight: 650; letter-spacing: -.02em; }
+    .section-description { margin: -.5rem 0 .25rem; color: var(--muted); font-size: .85rem; }
+    .ui.placeholder.segment.empty { min-height: 280px; border: 1px dashed var(--strong-border); box-shadow: none; }
+    .ui.placeholder.segment.empty .header { color: var(--foreground); font-family: inherit; }
+    .device-pane { background: var(--background); }
+    @media (max-width: 36rem) {
+      .ui.container.app-container { padding-top: 1.75rem; }
+      .header-actions .scan { margin-left: 0; }
+      .header-actions .theme-toggle { grid-column: auto; }
+      .header-actions .ui.button { margin: 0; font-size: .8rem; padding: .85rem .5rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; }
+      button:hover { transform: none; }
+    }
   </style>
 </head>
 <body>
   <main class="ui container app-container">
     <header>
       <div>
-        <h1>Smart plugs</h1>
-        <p class="subtitle">Remember and control Kasa plugs on your local network.</p>
+        <h1>Home overview</h1>
+        <p class="subtitle">Manage your devices, groups and everyday routines.</p>
       </div>
       <div class="header-actions">
         <button class="ui basic button install-app" type="button" hidden><i class="download icon" aria-hidden="true"></i>Install app</button>

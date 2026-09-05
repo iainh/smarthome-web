@@ -2,14 +2,15 @@
   <div class="content">
     <div class="right floated plug-heading-actions">
       {#if plug.relay_on}
-        <span class="ui mini green label state state-on">On</span>
+        <span class="ui mini label state state-on">On</span>
       {#else}
-        <span class="ui mini red label state state-off">Off</span>
+        <span class="ui mini label state state-off">Off</span>
       {/if}
       <button class="ui basic icon button remove-device" type="button" aria-label="Remove {plug.alias} from inventory" title="Remove device" hx-delete="/devices/{plug.device_id}" hx-target="#plug-list" hx-swap="outerHTML" hx-confirm="Remove this device from the remembered inventory? A later scan can add it again." hx-disable="this">
         <i class="trash alternate outline icon" aria-hidden="true"></i>
       </button>
     </div>
+    <span class="device-symbol" aria-hidden="true"><i class="{#if plug.brightness}lightbulb outline{#else}plug{/if} icon"></i></span>
     <h2 class="header">{plug.alias}</h2>
     <p class="meta model">{plug.model}</p>
     <details class="device-details">

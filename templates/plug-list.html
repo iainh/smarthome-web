@@ -8,6 +8,7 @@
   {#if groups}
     <section class="device-section" aria-labelledby="groups-heading">
       <h2 id="groups-heading" class="section-heading">Groups</h2>
+      <p class="section-description">Bring your devices together. Control them as one.</p>
       <div class="ui cards plug-grid">
         {#for group in groups}
           {#include group.html /}
@@ -17,6 +18,7 @@
   {/if}
   <section class="device-section" aria-labelledby="devices-heading">
     <h2 id="devices-heading" class="section-heading">Devices</h2>
+    <p class="section-description">Your remembered Kasa devices, all in one place.</p>
     {#if plugs}
       <div class="ui cards plug-grid">
         {#for plug in plugs}

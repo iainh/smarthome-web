@@ -2972,12 +2972,38 @@ mod tests {
 
         assert!(fragment.contains("hx-post=\"/groups/3/relay\""));
         assert!(fragment.contains("hx-get=\"/groups/3/automations\""));
-        assert!(fragment.contains("name=\"on\" value=\"true\""));
+        assert!(!fragment.contains("name=\"on\" value=\"true\""));
         assert!(fragment.contains("name=\"on\" value=\"false\""));
+        assert!(fragment.contains("class=\"button-label\">Turn off</span>"));
+        assert!(!fragment.contains("role=\"switch\""));
         assert!(fragment.contains("hx-get=\"/groups/3\""));
         assert!(fragment.contains("&lt;Downstairs&gt;"));
         assert!(fragment.contains("Lamp &amp; fan"));
         assert!(fragment.contains("Some members are not in the remembered inventory"));
+    }
+
+    #[test]
+    fn group_button_handles_off_mixed_and_unavailable_states() {
+        for (state, reachable_count) in [("Off", 2), ("Mixed", 2), ("Unavailable", 0)] {
+            let fragment = render(DeviceListTemplate {
+                groups: vec![GroupView {
+                    id: 3,
+                    name: "Room".to_owned(),
+                    member_count: 2,
+                    reachable_count,
+                    members: "Lamp, fan".to_owned(),
+                    state,
+                    state_class: "",
+                    has_offline_members: reachable_count == 0,
+                }],
+                plugs: Vec::new(),
+                notice: None,
+            });
+            assert_eq!(fragment.matches("name=\"on\"").count(), 1);
+            assert!(fragment.contains("class=\"button-label\">Turn on</span>"));
+            assert!(fragment.contains("name=\"on\" value=\"true\""));
+            assert_eq!(fragment.contains("disabled>"), reachable_count == 0);
+        }
     }
 
     #[test]
