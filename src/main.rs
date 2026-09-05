@@ -15,8 +15,8 @@ use axum::routing::{get, post};
 use axum::Router;
 use database::Database;
 use group::{automation_target, DeviceGroup, GroupEngine};
-use minijinja::{context, AutoEscape, Environment};
-use serde::{Deserialize, Serialize};
+use radiant::{Engine, Template, TemplateValue};
+use serde::Deserialize;
 use smarthome::{CountdownRule, ScheduleRule, SmartHomeClient, SmartPlug};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
@@ -34,14 +34,14 @@ const WEATHER_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 struct AppState {
     client: SmartHomeClient,
-    templates: Environment<'static>,
+    templates: Engine,
     automations: Arc<AutomationEngine>,
     groups: Arc<GroupEngine>,
     database: Arc<Database>,
     device_addresses: Vec<IpAddr>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, TemplateValue)]
 struct PlugView {
     address: String,
     model: String,
@@ -96,14 +96,13 @@ impl GroupForm {
     }
 }
 
-#[derive(Serialize)]
 struct DeviceListView {
     groups: Vec<GroupView>,
     plugs: Vec<PlugView>,
     notice: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, TemplateValue)]
 struct GroupView {
     id: u64,
     name: String,
@@ -115,7 +114,7 @@ struct GroupView {
     has_offline_members: bool,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct GroupPanel {
     id: Option<u64>,
     name: String,
@@ -123,7 +122,7 @@ struct GroupPanel {
     editing: bool,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct GroupDeviceOption {
     field_name: String,
     device_id: String,
@@ -162,7 +161,7 @@ struct LightAutomationForm {
     outside_window: String,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct AutomationPanel {
     address: String,
     automation_base: String,
@@ -173,7 +172,7 @@ struct AutomationPanel {
     schedules: SchedulePanel,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct WeekCalendarView {
     timezone: String,
     week_label: String,
@@ -184,7 +183,7 @@ struct WeekCalendarView {
     days: Vec<CalendarDayView>,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct CalendarDayView {
     index: usize,
     name: &'static str,
@@ -194,18 +193,19 @@ struct CalendarDayView {
     entries: Vec<CalendarEntryView>,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct CalendarSummaryView {
     state: &'static str,
+    state_lower: &'static str,
     next: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct CalendarConflictView {
     detail: String,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct CalendarEntryView {
     rule_id: u64,
     name: String,
@@ -222,7 +222,7 @@ struct CalendarEntryView {
     collision_index: usize,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct AutomationView {
     id: u64,
     title: &'static str,
@@ -265,13 +265,13 @@ struct CountdownInput {
     turn_on: bool,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct CountdownPanel {
     address: String,
     rules: Vec<CountdownView>,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct CountdownView {
     id: String,
     name: String,
@@ -294,14 +294,14 @@ struct ScheduleForm {
     sat: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct SchedulePanel {
     migratable_count: usize,
     unsupported_count: usize,
     rules: Vec<ScheduleView>,
 }
 
-#[derive(Serialize)]
+#[derive(TemplateValue)]
 struct ScheduleView {
     name: String,
     enabled: bool,
@@ -309,6 +309,62 @@ struct ScheduleView {
     time: String,
     action: &'static str,
     weekday_summary: String,
+}
+
+#[derive(Template)]
+#[template(path = "index.html")]
+struct IndexTemplate {
+    groups: Vec<GroupView>,
+    plugs: Vec<PlugView>,
+    notice: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "plug-list.html")]
+struct DeviceListTemplate {
+    groups: Vec<GroupView>,
+    plugs: Vec<PlugView>,
+    notice: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "group-result.html")]
+struct GroupResultTemplate {
+    groups: Vec<GroupView>,
+    plugs: Vec<PlugView>,
+    notice: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "group-panel.html")]
+struct GroupPanelTemplate {
+    panel: GroupPanel,
+}
+
+#[derive(Template)]
+#[template(path = "automation-panel.html")]
+struct AutomationPanelTemplate<'a> {
+    panel: &'a AutomationPanel,
+}
+
+#[derive(Template)]
+#[template(path = "countdown-panel.html")]
+struct CountdownPanelTemplate<'a> {
+    panel: &'a CountdownPanel,
+}
+
+#[derive(TemplateValue)]
+struct EventView {
+    occurred_at: i64,
+    source: String,
+    source_class: String,
+    message: String,
+}
+
+#[derive(Template)]
+#[template(path = "event-panel.html")]
+struct EventPanelTemplate {
+    events: Vec<EventView>,
 }
 
 #[derive(Debug)]
@@ -360,8 +416,8 @@ impl From<smarthome::Error> for AppError {
     }
 }
 
-impl From<minijinja::Error> for AppError {
-    fn from(error: minijinja::Error) -> Self {
+impl From<radiant::RenderError> for AppError {
+    fn from(error: radiant::RenderError) -> Self {
         Self::internal(error.to_string())
     }
 }
@@ -407,7 +463,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
     }
     let state = Arc::new(AppState {
         client: SmartHomeClient::new(),
-        templates: templates()?,
+        templates: Engine::new()?,
         automations: automations.clone(),
         groups,
         database: database.clone(),
@@ -524,21 +580,35 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    let view = load_device_list(&state, None)?;
-    let page = state
-        .templates
-        .get_template("index.html")?
-        .render(context! { groups => view.groups, plugs => view.plugs, notice => view.notice })?;
-    Ok(Html(page))
+    let DeviceListView {
+        groups,
+        plugs,
+        notice,
+    } = load_device_list(&state, None)?;
+    render_template(
+        &state,
+        IndexTemplate {
+            groups,
+            plugs,
+            notice,
+        },
+    )
 }
 
 async fn get_events(State(state): State<Arc<AppState>>) -> Result<Html<String>, AppError> {
-    let events = state.database.recent_events(100).map_err(database_error)?;
-    let fragment = state
-        .templates
-        .get_template("event-panel.html")?
-        .render(context! { events })?;
-    Ok(Html(fragment))
+    let events = state
+        .database
+        .recent_events(100)
+        .map_err(database_error)?
+        .into_iter()
+        .map(|event| EventView {
+            occurred_at: event.occurred_at,
+            source_class: event.source.to_lowercase(),
+            source: event.source,
+            message: event.message,
+        })
+        .collect();
+    render_template(&state, EventPanelTemplate { events })
 }
 
 async fn favicon() -> Response {
@@ -2052,6 +2122,7 @@ fn calendar_summary(
         });
     Some(CalendarSummaryView {
         state: if current.rule.turn_on { "ON" } else { "OFF" },
+        state_lower: if current.rule.turn_on { "on" } else { "off" },
         next,
     })
 }
@@ -2626,94 +2697,60 @@ fn solar_schedule_time(event: &str, offset_minutes: i16) -> String {
 }
 
 fn render_device_list(state: &AppState, view: DeviceListView) -> Result<Html<String>, AppError> {
-    let fragment = state
-        .templates
-        .get_template("plug-list.html")?
-        .render(context! { groups => view.groups, plugs => view.plugs, notice => view.notice })?;
-    Ok(Html(fragment))
+    render_template(
+        state,
+        DeviceListTemplate {
+            groups: view.groups,
+            plugs: view.plugs,
+            notice: view.notice,
+        },
+    )
 }
 
 fn render_group_result(state: &AppState, view: DeviceListView) -> Result<Html<String>, AppError> {
-    let fragment = state
-        .templates
-        .get_template("group-result.html")?
-        .render(context! { groups => view.groups, plugs => view.plugs, notice => view.notice })?;
-    Ok(Html(fragment))
+    render_template(
+        state,
+        GroupResultTemplate {
+            groups: view.groups,
+            plugs: view.plugs,
+            notice: view.notice,
+        },
+    )
 }
 
 fn render_group_panel(state: &AppState, panel: GroupPanel) -> Result<Html<String>, AppError> {
-    let fragment = state
-        .templates
-        .get_template("group-panel.html")?
-        .render(context! { panel })?;
-    Ok(Html(fragment))
+    render_template(state, GroupPanelTemplate { panel })
 }
 
 fn render_countdown_panel(
     state: &AppState,
     panel: &CountdownPanel,
 ) -> Result<Html<String>, AppError> {
-    let fragment = state
-        .templates
-        .get_template("countdown-panel.html")?
-        .render(context! { panel })?;
-    Ok(Html(fragment))
+    render_template(state, CountdownPanelTemplate { panel })
 }
 
 fn render_automation_panel(
     state: &AppState,
     panel: &AutomationPanel,
 ) -> Result<Html<String>, AppError> {
-    let fragment = state
-        .templates
-        .get_template("automation-panel.html")?
-        .render(context! { panel })?;
-    Ok(Html(fragment))
+    render_template(state, AutomationPanelTemplate { panel })
 }
 
-fn templates() -> Result<Environment<'static>, minijinja::Error> {
-    let mut templates = Environment::new();
-    templates.set_auto_escape_callback(|name| {
-        if name.ends_with(".html") {
-            AutoEscape::Html
-        } else {
-            AutoEscape::None
-        }
-    });
-    templates.add_template("index.html", include_str!("../templates/index.html"))?;
-    templates.add_template(
-        "plug-list.html",
-        include_str!("../templates/plug-list.html"),
-    )?;
-    templates.add_template("plug.html", include_str!("../templates/plug.html"))?;
-    templates.add_template("group.html", include_str!("../templates/group.html"))?;
-    templates.add_template(
-        "group-panel.html",
-        include_str!("../templates/group-panel.html"),
-    )?;
-    templates.add_template(
-        "group-result.html",
-        include_str!("../templates/group-result.html"),
-    )?;
-    templates.add_template(
-        "automation-panel.html",
-        include_str!("../templates/automation-panel.html"),
-    )?;
-    templates.add_template(
-        "countdown-panel.html",
-        include_str!("../templates/countdown-panel.html"),
-    )?;
-    templates.add_template(
-        "event-panel.html",
-        include_str!("../templates/event-panel.html"),
-    )?;
-    Ok(templates)
+fn render_template(state: &AppState, template: impl Template) -> Result<Html<String>, AppError> {
+    let rendered = futures_executor::block_on(state.templates.render(template))?;
+    Ok(Html(rendered.to_string()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::automation::{LightHistory, LightPoint};
+
+    fn render(template: impl Template) -> String {
+        futures_executor::block_on(Engine::new().unwrap().render(template))
+            .unwrap()
+            .to_string()
+    }
 
     fn smart_plug(device_id: &str, alias: &str, relay_on: bool) -> SmartPlug {
         SmartPlug {
@@ -2869,12 +2906,7 @@ mod tests {
         assert!(!panel.devices[1].available);
         assert!(panel.devices[1].selected);
 
-        let fragment = templates()
-            .unwrap()
-            .get_template("group-panel.html")
-            .unwrap()
-            .render(context! { panel })
-            .unwrap();
+        let fragment = render(GroupPanelTemplate { panel });
         assert!(fragment.contains("hx-post=\"/groups/7\""));
         assert!(fragment.contains("hx-delete=\"/groups/7\""));
         assert!(fragment.contains("value=\"offline-12345678\" checked"));
@@ -2903,14 +2935,11 @@ mod tests {
             has_offline_members: false,
         }];
 
-        let fragment = templates()
-            .unwrap()
-            .get_template("group-result.html")
-            .unwrap()
-            .render(
-                context! { groups, plugs => Vec::<PlugView>::new(), notice => "Updated group." },
-            )
-            .unwrap();
+        let fragment = render(GroupResultTemplate {
+            groups,
+            plugs: Vec::new(),
+            notice: Some("Updated group.".to_owned()),
+        });
 
         assert!(fragment.contains("<hx-partial id=\"plug-list\" hx-swap=\"outerHTML\">"));
         assert!(fragment.contains("<section id=\"plug-list\""));
@@ -2935,12 +2964,11 @@ mod tests {
             has_offline_members: true,
         }];
 
-        let fragment = templates()
-            .unwrap()
-            .get_template("plug-list.html")
-            .unwrap()
-            .render(context! { groups, plugs => Vec::<PlugView>::new() })
-            .unwrap();
+        let fragment = render(DeviceListTemplate {
+            groups,
+            plugs: Vec::new(),
+            notice: None,
+        });
 
         assert!(fragment.contains("hx-post=\"/groups/3/relay\""));
         assert!(fragment.contains("hx-get=\"/groups/3/automations\""));
@@ -2979,12 +3007,7 @@ mod tests {
             },
         };
 
-        let fragment = templates()
-            .unwrap()
-            .get_template("automation-panel.html")
-            .unwrap()
-            .render(context! { panel })
-            .unwrap();
+        let fragment = render(AutomationPanelTemplate { panel: &panel });
 
         assert!(fragment.contains("Living room"));
         assert!(fragment.contains("hx-post=\"/groups/3/automations/fixed\""));
@@ -3006,12 +3029,11 @@ mod tests {
             brightness: Some(65),
         }];
 
-        let page = templates()
-            .unwrap()
-            .get_template("index.html")
-            .unwrap()
-            .render(context! { plugs })
-            .unwrap();
+        let page = render(IndexTemplate {
+            groups: Vec::new(),
+            plugs,
+            notice: None,
+        });
 
         assert!(page.contains("htmx.org@4.0.0/dist/htmx.min.js"));
         assert!(page.contains("semantic-ui@2.5.0/dist/semantic.min.css"));
@@ -3237,12 +3259,7 @@ mod tests {
                 rules: Vec::new(),
             },
         };
-        let fragment = templates()
-            .unwrap()
-            .get_template("automation-panel.html")
-            .unwrap()
-            .render(context! { panel })
-            .unwrap();
+        let fragment = render(AutomationPanelTemplate { panel: &panel });
         assert!(fragment.contains("Schedule conflict"));
         assert!(fragment.contains(
             "Monday at 6:00 PM: Evening new wins over Evening old because it was added most recently."
@@ -3302,12 +3319,7 @@ mod tests {
                 rules: Vec::new(),
             },
         };
-        let fragment = templates()
-            .unwrap()
-            .get_template("automation-panel.html")
-            .unwrap()
-            .render(context! { panel })
-            .unwrap();
+        let fragment = render(AutomationPanelTemplate { panel: &panel });
         assert!(fragment.contains("No turn-on event is scheduled"));
         assert!(fragment.contains(
             "Covered devices stay off until another schedule or manual action changes them."
@@ -3331,12 +3343,7 @@ mod tests {
             },
         };
 
-        let fragment = templates()
-            .unwrap()
-            .get_template("automation-panel.html")
-            .unwrap()
-            .render(context! { panel })
-            .unwrap();
+        let fragment = render(AutomationPanelTemplate { panel: &panel });
 
         assert!(fragment.contains("No timed schedules yet"));
         assert!(!fragment.contains("openScheduleAddMenu"));
@@ -3517,12 +3524,7 @@ mod tests {
             },
         };
 
-        let fragment = templates()
-            .unwrap()
-            .get_template("automation-panel.html")
-            .unwrap()
-            .render(context! { panel })
-            .unwrap();
+        let fragment = render(AutomationPanelTemplate { panel: &panel });
 
         assert!(fragment.contains("8:15 PM GMT-4"));
         assert!(fragment.contains("42.5 W/m²"));
@@ -3633,12 +3635,7 @@ mod tests {
             }],
         };
 
-        let fragment = templates()
-            .unwrap()
-            .get_template("countdown-panel.html")
-            .unwrap()
-            .render(context! { panel })
-            .unwrap();
+        let fragment = render(CountdownPanelTemplate { panel: &panel });
 
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/countdown\""));
         assert!(fragment.contains("hx-delete=\"/plugs/192.0.2.1/countdown/timer-id\""));

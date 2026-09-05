@@ -102,7 +102,7 @@ fn enabled_by_default() -> bool {
     true
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, radiant::TemplateValue)]
 pub struct WeatherStatus {
     pub local_time: String,
     pub current_minute: u16,
@@ -118,6 +118,7 @@ pub struct WeatherStatus {
     pub sunset: String,
     pub previous_day_light: Option<LightHistory>,
     pub current_day: i64,
+    #[template_value(skip)]
     pub solar_days: Vec<SolarForecastDay>,
 }
 
@@ -128,7 +129,7 @@ pub struct SolarForecastDay {
     pub sunset_minute: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, radiant::TemplateValue)]
 pub struct LightHistory {
     pub points: Vec<LightPoint>,
     pub average_points: Vec<LightPoint>,
@@ -141,7 +142,7 @@ pub struct LightHistory {
     pub sunset: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, radiant::TemplateValue)]
 pub struct LightPoint {
     pub x: f64,
     pub y: f64,

@@ -10,23 +10,23 @@
 
   <button class="ui fluid button event-refresh" type="button" hx-get="/events" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="this"><i class="sync alternate icon" aria-hidden="true"></i>Refresh activity</button>
 
-  {% if events %}
+  {#if events}
     <ol class="event-list">
-      {% for event in events %}
+      {#for event in events}
         <li class="event-item">
           <div class="event-meta">
-            <span class="event-source event-source-{{ event.source | lower }}">{{ event.source }}</span>
-            <time data-event-time="{{ event.occurred_at }}">Recently</time>
+            <span class="event-source event-source-{event.source_class}">{event.source}</span>
+            <time data-event-time="{event.occurred_at}">Recently</time>
           </div>
-          <p>{{ event.message }}</p>
+          <p>{event.message}</p>
         </li>
-      {% endfor %}
+      {/for}
     </ol>
-  {% else %}
+  {#else}
     <div class="event-empty">
       <i class="history icon" aria-hidden="true"></i>
       <strong>No activity yet</strong>
       <span>Relay, brightness, group, and automation changes will appear here.</span>
     </div>
-  {% endif %}
+  {/if}
 </dialog>

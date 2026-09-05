@@ -2,35 +2,35 @@
   <div class="device-pane-resizer" role="separator" aria-label="Resize group pane" aria-orientation="vertical" tabindex="0"></div>
   <div class="pane-header">
     <div>
-      <h2 id="group-pane-title">{% if panel.editing %}Edit group{% else %}Create group{% endif %}</h2>
+      <h2 id="group-pane-title">{#if panel.editing}Edit group{#else}Create group{/if}</h2>
       <span id="group-pane-description" class="schedule-status">Local device group</span>
     </div>
     <button class="ui basic icon button pane-close" type="button" aria-label="Close group pane" onclick="this.closest('dialog').close()"><i class="close icon" aria-hidden="true"></i></button>
   </div>
 
-  <form class="ui form schedule-form" hx-post="{% if panel.editing %}/groups/{{ panel.id }}{% else %}/groups{% endif %}" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
+  <form class="ui form schedule-form" hx-post="{#if panel.editing}/groups/{panel.id ?: ''}{#else}/groups{/if}" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
     <div class="field">
       <label for="group-name">Group name</label>
-      <input id="group-name" name="name" maxlength="64" required value="{{ panel.name }}" placeholder="Living room" autofocus>
+      <input id="group-name" name="name" maxlength="64" required value="{panel.name}" placeholder="Living room" autofocus>
     </div>
     <fieldset class="ui segment group-membership">
       <legend>Devices</legend>
-      {% for device in panel.devices %}
-        <label class="group-device {% if not device.available %}group-device-offline{% endif %}">
-          <input type="checkbox" name="{{ device.field_name }}" value="{{ device.device_id }}" {% if device.selected %}checked{% endif %}>
+      {#for device in panel.devices}
+        <label class="group-device {#if !device.available}group-device-offline{/if}">
+          <input type="checkbox" name="{device.field_name}" value="{device.device_id}" {#if device.selected}checked{/if}>
           <span>
-            <strong>{{ device.alias }}</strong>
-            <small>{% if device.available %}Available{% else %}Unavailable{% endif %}</small>
+            <strong>{device.alias}</strong>
+            <small>{#if device.available}Available{#else}Unavailable{/if}</small>
           </span>
         </label>
-      {% else %}
+      {#else}
         <p class="schedule-status">No devices remembered. Scan the network first.</p>
-      {% endfor %}
+      {/for}
     </fieldset>
-    <button class="ui primary button small-button" type="submit"><i class="save outline icon" aria-hidden="true"></i>{% if panel.editing %}Save group{% else %}Create group{% endif %}</button>
+    <button class="ui primary button small-button" type="submit"><i class="save outline icon" aria-hidden="true"></i>{#if panel.editing}Save group{#else}Create group{/if}</button>
   </form>
 
-  {% if panel.editing %}
-    <button class="ui fluid negative button small-button danger group-delete" type="button" hx-delete="/groups/{{ panel.id }}" hx-target="#plug-list" hx-swap="outerHTML" hx-confirm="Delete this group? Devices will not be removed." hx-disable="this"><i class="trash alternate outline icon" aria-hidden="true"></i>Delete group</button>
-  {% endif %}
+  {#if panel.editing}
+    <button class="ui fluid negative button small-button danger group-delete" type="button" hx-delete="/groups/{panel.id ?: ''}" hx-target="#plug-list" hx-swap="outerHTML" hx-confirm="Delete this group? Devices will not be removed." hx-disable="this"><i class="trash alternate outline icon" aria-hidden="true"></i>Delete group</button>
+  {/if}
 </dialog>

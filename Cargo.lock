@@ -186,6 +186,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
 
 [[package]]
+name = "futures-executor"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "031b47cf1a3c6cc8bc2fc76cd437f521619387907d469316e7c0bc278f1f5432"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-macro"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
 name = "futures-task"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -198,6 +220,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
  "futures-core",
+ "futures-macro",
  "futures-task",
  "pin-project-lite",
  "slab",
@@ -537,26 +560,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
-name = "memo-map"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38d1115007560874e373613744c6fba374c17688327a71c1476d1a5954cc857b"
-
-[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
-
-[[package]]
-name = "minijinja"
-version = "2.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86886cf6dbf4e614b19c9a1eec9775f021869d7eadde0fc73921a81b90c9b4c9"
-dependencies = [
- "memo-map",
- "serde",
-]
 
 [[package]]
 name = "mio"
@@ -681,6 +688,35 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "radiant"
+version = "0.1.0"
+source = "git+https://github.com/iainh/radiant#8db74fc5e610c6193ca142ec7d418f7d9ca31946"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "itoa",
+ "radiant-compiler",
+ "radiant-macros",
+ "ryu",
+]
+
+[[package]]
+name = "radiant-compiler"
+version = "0.1.0"
+source = "git+https://github.com/iainh/radiant#8db74fc5e610c6193ca142ec7d418f7d9ca31946"
+
+[[package]]
+name = "radiant-macros"
+version = "0.1.0"
+source = "git+https://github.com/iainh/radiant#8db74fc5e610c6193ca142ec7d418f7d9ca31946"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "radiant-compiler",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "rand"
@@ -927,7 +963,8 @@ name = "smarthome-web"
 version = "0.1.0"
 dependencies = [
  "axum",
- "minijinja",
+ "futures-executor",
+ "radiant",
  "reqwest",
  "rusqlite",
  "serde",

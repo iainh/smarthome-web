@@ -1,27 +1,27 @@
 <article class="ui fluid card plug-card group-card">
   <div class="content">
-    <span class="right floated ui mini label state {{ group.state_class }}">{{ group.state }}</span>
-    <h3 class="header">{{ group.name }}</h3>
-    <p class="meta model">{{ group.reachable_count }} of {{ group.member_count }} members remembered</p>
-    <p class="description group-members">{{ group.members }}</p>
-    {% if group.has_offline_members %}
+    <span class="right floated ui mini label state {group.state_class}">{group.state}</span>
+    <h3 class="header">{group.name}</h3>
+    <p class="meta model">{group.reachable_count} of {group.member_count} members remembered</p>
+    <p class="description group-members">{group.members}</p>
+    {#if group.has_offline_members}
       <div class="ui tiny warning message group-warning">Some members are not in the remembered inventory. Remembered members can still be controlled.</div>
-    {% endif %}
+    {/if}
   </div>
   <div class="content">
     <div class="group-relay-actions">
-      <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
+      <form hx-post="/groups/{group.id}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
         <button class="ui fluid primary button toggle" type="submit" name="on" value="true"><i class="power off icon" aria-hidden="true"></i>Turn on</button>
       </form>
-      <form hx-post="/groups/{{ group.id }}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
+      <form hx-post="/groups/{group.id}/relay" hx-target="#plug-list" hx-swap="outerHTML" hx-disable="find button">
         <button class="ui fluid negative button toggle toggle-off" type="submit" name="on" value="false"><i class="power off icon" aria-hidden="true"></i>Turn off</button>
       </form>
     </div>
   </div>
   <div class="extra content">
     <div class="plug-actions">
-      <button class="ui button automation-button" type="button" hx-get="/groups/{{ group.id }}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this"><i class="calendar alternate outline icon" aria-hidden="true"></i><span class="button-label">Automations</span></button>
-      <button class="ui button small-button group-edit" type="button" hx-get="/groups/{{ group.id }}" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this"><i class="edit outline icon" aria-hidden="true"></i><span class="button-label">Edit group</span></button>
+      <button class="ui button automation-button" type="button" hx-get="/groups/{group.id}/automations" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this"><i class="calendar alternate outline icon" aria-hidden="true"></i><span class="button-label">Automations</span></button>
+      <button class="ui button small-button group-edit" type="button" hx-get="/groups/{group.id}" hx-target="#device-pane" hx-swap="outerHTML" hx-disable="this"><i class="edit outline icon" aria-hidden="true"></i><span class="button-label">Edit group</span></button>
     </div>
   </div>
 </article>

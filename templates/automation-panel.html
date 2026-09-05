@@ -3,64 +3,64 @@
   <div class="pane-header">
     <div>
       <h2 id="automation-pane-title">Automations</h2>
-      <span id="automation-pane-address" class="schedule-status">{{ panel.address }}</span>
+      <span id="automation-pane-address" class="schedule-status">{panel.address}</span>
     </div>
     <button class="ui basic icon button pane-close" type="button" aria-label="Close automation pane" onclick="this.closest('dialog').close()" autofocus><i class="close icon" aria-hidden="true"></i></button>
   </div>
 
   <p class="automation-intro">All schedules below are stored and evaluated by this server every five minutes. If several rules apply together, the most recently added rule wins.</p>
 
-  {% if panel.calendar %}
-    <section class="ui segment week-calendar" data-calendar-view="state" data-automation-base="{{ panel.automation_base | safe }}" aria-labelledby="week-calendar-title">
+  {#if panel.calendar}
+    <section class="ui segment week-calendar" data-calendar-view="state" data-automation-base="{panel.automation_base}" aria-labelledby="week-calendar-title">
       <div class="week-calendar-header">
         <div>
-          <h3 id="week-calendar-title">This week <span>· {{ panel.calendar.week_label }}</span></h3>
-          <span class="schedule-status">Times shown in {{ panel.calendar.timezone }}</span>
+          <h3 id="week-calendar-title">This week <span>· {panel.calendar.week_label}</span></h3>
+          <span class="schedule-status">Times shown in {panel.calendar.timezone}</span>
         </div>
         <div class="calendar-view-toggle" role="group" aria-label="Calendar view">
           <button class="ui mini button calendar-view-button active" type="button" data-view="state" aria-pressed="true" onclick="setCalendarView(this, 'state')">State view</button>
           <button class="ui mini button calendar-view-button" type="button" data-view="events" aria-pressed="false" onclick="setCalendarView(this, 'events')">Rule events</button>
         </div>
       </div>
-      {% if panel.calendar.summary %}
-        <div class="ui compact message calendar-summary"><strong>Scheduled {{ panel.calendar.summary.state }} now</strong>{% if panel.calendar.summary.next %}<span>{{ panel.calendar.summary.next }}</span>{% endif %}</div>
-        {% if not panel.calendar.summary.next %}
-          <div class="ui warning message calendar-carry-warning"><strong>No turn-{% if panel.calendar.summary.state == "ON" %}off{% else %}on{% endif %} event is scheduled</strong><span>Covered devices stay {{ panel.calendar.summary.state | lower }} until another schedule or manual action changes them.</span></div>
-        {% endif %}
-      {% endif %}
+      {#if panel.calendar.summary}
+        <div class="ui compact message calendar-summary"><strong>Scheduled {panel.calendar.summary.state} now</strong>{#if panel.calendar.summary.next}<span>{panel.calendar.summary.next}</span>{/if}</div>
+        {#if !panel.calendar.summary.next}
+          <div class="ui warning message calendar-carry-warning"><strong>No turn-{#if panel.calendar.summary.state == "ON"}off{#else}on{/if} event is scheduled</strong><span>Covered devices stay {panel.calendar.summary.state_lower} until another schedule or manual action changes them.</span></div>
+        {/if}
+      {/if}
       <p class="calendar-help">Select a span or boundary to inspect, edit, or disable its rule.</p>
       <div class="calendar-day-picker" role="group" aria-label="Calendar day">
-        {% for day in panel.calendar.days %}
-          <button class="calendar-day-button{% if day.is_today %} active{% endif %}" type="button" data-calendar-day="{{ day.index }}" aria-controls="calendar-day-{{ day.index }}" aria-pressed="{% if day.is_today %}true{% else %}false{% endif %}" onclick="setCalendarDay(this, {{ day.index }})"><span>{{ day.name }}</span><small>{{ day.date_label }}</small></button>
-        {% endfor %}
+        {#for day in panel.calendar.days}
+          <button class="calendar-day-button{#if day.is_today} active{/if}" type="button" data-calendar-day="{day.index}" aria-controls="calendar-day-{day.index}" aria-pressed="{#if day.is_today}true{#else}false{/if}" onclick="setCalendarDay(this, {day.index})"><span>{day.name}</span><small>{day.date_label}</small></button>
+        {/for}
       </div>
       <div class="calendar-axis" aria-hidden="true">
         <span>12 AM</span><span>6 AM</span><span>Noon</span><span>6 PM</span><span>12 AM</span>
       </div>
       <div class="calendar-days">
-        {% for day in panel.calendar.days %}
-          <div id="calendar-day-{{ day.index }}" class="calendar-day{% if day.is_today %} calendar-today calendar-mobile-selected{% endif %}" data-calendar-day="{{ day.index }}">
-            <div class="calendar-day-label">{{ day.name }}<small>{{ day.date_label }}</small>{% if day.is_today %}<span>Today</span>{% endif %}</div>
-            <div class="calendar-track" style="--calendar-lanes: {{ day.lane_count }}">
-              {% if day.is_today %}<span class="calendar-now" style="--calendar-left: {{ panel.calendar.current_left }}%"><i>Now</i></span>{% endif %}
-              {% for entry in day.entries %}
-                <button class="{{ entry.class }}{% if entry.point %} calendar-point{% else %} calendar-span{% endif %}" type="button" style="--calendar-left: {{ entry.left }}%; --calendar-width: {{ entry.width }}%; --calendar-lane: {{ entry.lane }}; --calendar-collision: {{ entry.collision_index }}" data-calendar-entry data-rule-id="{{ entry.rule_id }}" data-name="{{ entry.name }}" data-detail="{{ entry.detail }}" data-enabled="{% if entry.enabled %}true{% else %}false{% endif %}" data-winner="{% if entry.winner %}true{% else %}false{% endif %}" aria-pressed="false" title="{{ entry.name }} — {{ entry.detail }}" aria-label="{{ entry.name }}: {{ entry.detail }}. Inspect schedule">
-                  <span>{{ entry.label }}</span>
+        {#for day in panel.calendar.days}
+          <div id="calendar-day-{day.index}" class="calendar-day{#if day.is_today} calendar-today calendar-mobile-selected{/if}" data-calendar-day="{day.index}">
+            <div class="calendar-day-label">{day.name}<small>{day.date_label}</small>{#if day.is_today}<span>Today</span>{/if}</div>
+            <div class="calendar-track" style="--calendar-lanes: {day.lane_count}">
+              {#if day.is_today}<span class="calendar-now" style="--calendar-left: {panel.calendar.current_left}%"><i>Now</i></span>{/if}
+              {#for entry in day.entries}
+                <button class="{entry.class}{#if entry.point} calendar-point{#else} calendar-span{/if}" type="button" style="--calendar-left: {entry.left}%; --calendar-width: {entry.width}%; --calendar-lane: {entry.lane}; --calendar-collision: {entry.collision_index}" data-calendar-entry data-rule-id="{entry.rule_id}" data-name="{entry.name}" data-detail="{entry.detail}" data-enabled="{#if entry.enabled}true{#else}false{/if}" data-winner="{#if entry.winner}true{#else}false{/if}" aria-pressed="false" title="{entry.name} — {entry.detail}" aria-label="{entry.name}: {entry.detail}. Inspect schedule">
+                  <span>{entry.label}</span>
                 </button>
-              {% endfor %}
+              {/for}
             </div>
           </div>
-        {% endfor %}
+        {/for}
       </div>
-      {% if not panel.calendar.has_entries %}
+      {#if !panel.calendar.has_entries}
         <div class="calendar-empty">
           <strong>No timed schedules yet</strong>
           <span>Add an event to show when the target will turn on or off.</span>
         </div>
-      {% endif %}
-      {% for conflict in panel.calendar.conflicts %}
-        <div class="ui warning message calendar-conflict-warning"><strong>Schedule conflict</strong><span>{{ conflict.detail }}</span></div>
-      {% endfor %}
+      {/if}
+      {#for conflict in panel.calendar.conflicts}
+        <div class="ui warning message calendar-conflict-warning"><strong>Schedule conflict</strong><span>{conflict.detail}</span></div>
+      {/for}
       <div class="calendar-selection" aria-live="polite" hidden>
         <div class="calendar-selection-heading"><strong class="calendar-selection-name"></strong><span class="calendar-winner-badge" hidden>Wins conflict</span></div>
         <p class="calendar-selection-detail"></p>
@@ -81,84 +81,84 @@
         <span><i class="calendar-window-key"></i>Outdoor-light window</span>
       </div>
     </section>
-  {% endif %}
+  {/if}
 
   <div class="calendar-editor-store" hidden>
-    {% for rule in panel.rules %}
-      <details class="schedule-editor" id="schedule-editor-{{ rule.id }}">
+    {#for rule in panel.rules}
+      <details class="schedule-editor" id="schedule-editor-{rule.id}">
         <summary>Edit schedule</summary>
-        {% if rule.kind == "fixed" %}
-          <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
-            <div class="field"><label for="fixed-name-{{ rule.id }}">Name</label><input id="fixed-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
-            <div class="field"><label for="fixed-time-{{ rule.id }}">Time</label><input id="fixed-time-{{ rule.id }}" name="time" type="time" required value="{{ rule.time }}"></div>
-            <div class="field"><label for="fixed-action-{{ rule.id }}">Action</label><select id="fixed-action-{{ rule.id }}" name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></div>
+        {#if rule.kind == "fixed"}
+          <form class="ui form schedule-form" hx-post="{panel.automation_base}/{rule.id}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
+            <div class="field"><label for="fixed-name-{rule.id}">Name</label><input id="fixed-name-{rule.id}" name="name" maxlength="64" required value="{rule.name}"></div>
+            <div class="field"><label for="fixed-time-{rule.id}">Time</label><input id="fixed-time-{rule.id}" name="time" type="time" required value="{rule.time}"></div>
+            <div class="field"><label for="fixed-action-{rule.id}">Action</label><select id="fixed-action-{rule.id}" name="action"><option value="on"{#if rule.turn_on} selected{/if}>Turn on</option><option value="off"{#if !rule.turn_on} selected{/if}>Turn off</option></select></div>
             <p class="schedule-action-help">This changes every covered device’s state until another schedule or manual action changes it.</p>
             <div class="field weekdays">
-              <label class="weekday"><input type="checkbox" name="sun"{% if rule.sun %} checked{% endif %}>Sun</label>
-              <label class="weekday"><input type="checkbox" name="mon"{% if rule.mon %} checked{% endif %}>Mon</label>
-              <label class="weekday"><input type="checkbox" name="tue"{% if rule.tue %} checked{% endif %}>Tue</label>
-              <label class="weekday"><input type="checkbox" name="wed"{% if rule.wed %} checked{% endif %}>Wed</label>
-              <label class="weekday"><input type="checkbox" name="thu"{% if rule.thu %} checked{% endif %}>Thu</label>
-              <label class="weekday"><input type="checkbox" name="fri"{% if rule.fri %} checked{% endif %}>Fri</label>
-              <label class="weekday"><input type="checkbox" name="sat"{% if rule.sat %} checked{% endif %}>Sat</label>
+              <label class="weekday"><input type="checkbox" name="sun"{#if rule.sun} checked{/if}>Sun</label>
+              <label class="weekday"><input type="checkbox" name="mon"{#if rule.mon} checked{/if}>Mon</label>
+              <label class="weekday"><input type="checkbox" name="tue"{#if rule.tue} checked{/if}>Tue</label>
+              <label class="weekday"><input type="checkbox" name="wed"{#if rule.wed} checked{/if}>Wed</label>
+              <label class="weekday"><input type="checkbox" name="thu"{#if rule.thu} checked{/if}>Thu</label>
+              <label class="weekday"><input type="checkbox" name="fri"{#if rule.fri} checked{/if}>Fri</label>
+              <label class="weekday"><input type="checkbox" name="sat"{#if rule.sat} checked{/if}>Sat</label>
             </div>
             <button class="ui primary button small-button" type="submit"><i class="save outline icon" aria-hidden="true"></i>Save changes</button>
           </form>
-        {% elif rule.kind == "solar" %}
-          <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
-            <div class="field"><label for="solar-name-{{ rule.id }}">Name</label><input id="solar-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
-            <div class="field"><label for="solar-event-{{ rule.id }}">Event</label><select id="solar-event-{{ rule.id }}" name="event"><option value="sunrise"{% if rule.event == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.event == "sunset" %} selected{% endif %}>Sunset</option></select></div>
-            <div class="field"><label for="solar-offset-{{ rule.id }}">Offset in minutes</label><input id="solar-offset-{{ rule.id }}" name="offset_minutes" type="number" min="-180" max="180" required value="{{ rule.offset_minutes }}"></div>
-            <div class="field"><label for="solar-action-{{ rule.id }}">Action</label><select id="solar-action-{{ rule.id }}" name="action"><option value="on"{% if rule.turn_on %} selected{% endif %}>Turn on</option><option value="off"{% if not rule.turn_on %} selected{% endif %}>Turn off</option></select></div>
+        {#else if rule.kind == "solar"}
+          <form class="ui form schedule-form" hx-post="{panel.automation_base}/{rule.id}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
+            <div class="field"><label for="solar-name-{rule.id}">Name</label><input id="solar-name-{rule.id}" name="name" maxlength="64" required value="{rule.name}"></div>
+            <div class="field"><label for="solar-event-{rule.id}">Event</label><select id="solar-event-{rule.id}" name="event"><option value="sunrise"{#if rule.event == "sunrise"} selected{/if}>Sunrise</option><option value="sunset"{#if rule.event == "sunset"} selected{/if}>Sunset</option></select></div>
+            <div class="field"><label for="solar-offset-{rule.id}">Offset in minutes</label><input id="solar-offset-{rule.id}" name="offset_minutes" type="number" min="-180" max="180" required value="{rule.offset_minutes}"></div>
+            <div class="field"><label for="solar-action-{rule.id}">Action</label><select id="solar-action-{rule.id}" name="action"><option value="on"{#if rule.turn_on} selected{/if}>Turn on</option><option value="off"{#if !rule.turn_on} selected{/if}>Turn off</option></select></div>
             <p class="schedule-action-help">This changes every covered device’s state until another schedule or manual action changes it.</p>
             <div class="field weekdays">
-              <label class="weekday"><input type="checkbox" name="sun"{% if rule.sun %} checked{% endif %}>Sun</label>
-              <label class="weekday"><input type="checkbox" name="mon"{% if rule.mon %} checked{% endif %}>Mon</label>
-              <label class="weekday"><input type="checkbox" name="tue"{% if rule.tue %} checked{% endif %}>Tue</label>
-              <label class="weekday"><input type="checkbox" name="wed"{% if rule.wed %} checked{% endif %}>Wed</label>
-              <label class="weekday"><input type="checkbox" name="thu"{% if rule.thu %} checked{% endif %}>Thu</label>
-              <label class="weekday"><input type="checkbox" name="fri"{% if rule.fri %} checked{% endif %}>Fri</label>
-              <label class="weekday"><input type="checkbox" name="sat"{% if rule.sat %} checked{% endif %}>Sat</label>
+              <label class="weekday"><input type="checkbox" name="sun"{#if rule.sun} checked{/if}>Sun</label>
+              <label class="weekday"><input type="checkbox" name="mon"{#if rule.mon} checked{/if}>Mon</label>
+              <label class="weekday"><input type="checkbox" name="tue"{#if rule.tue} checked{/if}>Tue</label>
+              <label class="weekday"><input type="checkbox" name="wed"{#if rule.wed} checked{/if}>Wed</label>
+              <label class="weekday"><input type="checkbox" name="thu"{#if rule.thu} checked{/if}>Thu</label>
+              <label class="weekday"><input type="checkbox" name="fri"{#if rule.fri} checked{/if}>Fri</label>
+              <label class="weekday"><input type="checkbox" name="sat"{#if rule.sat} checked{/if}>Sat</label>
             </div>
             <button class="ui primary button small-button" type="submit"><i class="save outline icon" aria-hidden="true"></i>Save changes</button>
           </form>
-        {% else %}
-          <form class="ui form schedule-form light-rule-form" hx-post="{{ panel.automation_base | safe }}/{{ rule.id }}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
-            <div class="field"><label for="light-name-{{ rule.id }}">Name</label><input id="light-name-{{ rule.id }}" name="name" maxlength="64" required value="{{ rule.name }}"></div>
+        {#else}
+          <form class="ui form schedule-form light-rule-form" hx-post="{panel.automation_base}/{rule.id}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button" {#if panel.weather}data-sunrise="{panel.weather.sunrise}" data-sunset="{panel.weather.sunset}"{/if}>
+            <div class="field"><label for="light-name-{rule.id}">Name</label><input id="light-name-{rule.id}" name="name" maxlength="64" required value="{rule.name}"></div>
             <div class="two fields form-row">
-              <div class="field"><label for="light-on-below-{{ rule.id }}">Turn on at or below</label><span class="unit-input"><input id="light-on-below-{{ rule.id }}" name="on_below" type="number" min="0" max="1499" step="1" required value="{{ rule.on_below }}"><span>W/m²</span></span></div>
-              <div class="field"><label for="light-off-above-{{ rule.id }}">Turn off at or above</label><span class="unit-input"><input id="light-off-above-{{ rule.id }}" name="off_above" type="number" min="1" max="1500" step="1" required value="{{ rule.off_above }}" aria-describedby="threshold-error-{{ rule.id }}"><span>W/m²</span></span></div>
+              <div class="field"><label for="light-on-below-{rule.id}">Turn on at or below</label><span class="unit-input"><input id="light-on-below-{rule.id}" name="on_below" type="number" min="0" max="1499" step="1" required value="{rule.on_below}"><span>W/m²</span></span></div>
+              <div class="field"><label for="light-off-above-{rule.id}">Turn off at or above</label><span class="unit-input"><input id="light-off-above-{rule.id}" name="off_above" type="number" min="1" max="1500" step="1" required value="{rule.off_above}" aria-describedby="threshold-error-{rule.id}"><span>W/m²</span></span></div>
             </div>
-            <p id="threshold-error-{{ rule.id }}" class="form-error threshold-error" role="alert" hidden>Turn-off threshold must be greater than the turn-on threshold.</p>
-            <div class="field"><label class="window-toggle"><input type="checkbox" name="window_enabled"{% if rule.window_enabled %} checked{% endif %}>Only control during an active window</label></div>
+            <p id="threshold-error-{rule.id}" class="form-error threshold-error" role="alert" hidden>Turn-off threshold must be greater than the turn-on threshold.</p>
+            <div class="field"><label class="window-toggle"><input type="checkbox" name="window_enabled"{#if rule.window_enabled} checked{/if}>Only control during an active window</label></div>
             <div class="window-flow">
               <div class="boundary-card" data-boundary="start">
                 <strong>Start</strong>
-                <div class="field"><label for="light-start-kind-{{ rule.id }}">Boundary</label><select id="light-start-kind-{{ rule.id }}" class="boundary-kind" name="start_kind"><option value="fixed"{% if rule.start_kind == "fixed" %} selected{% endif %}>Fixed time</option><option value="sunrise"{% if rule.start_kind == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.start_kind == "sunset" %} selected{% endif %}>Sunset</option></select></div>
-                <div class="field boundary-time-control"><label for="light-start-time-{{ rule.id }}">Time</label><input id="light-start-time-{{ rule.id }}" name="start_time" type="time" required value="{{ rule.start_time }}"></div>
-                <div class="field boundary-offset-control"><label for="light-start-offset-{{ rule.id }}">Offset in minutes</label><input id="light-start-offset-{{ rule.id }}" name="start_offset_minutes" type="number" min="-180" max="180" required value="{{ rule.start_offset_minutes }}"></div>
+                <div class="field"><label for="light-start-kind-{rule.id}">Boundary</label><select id="light-start-kind-{rule.id}" class="boundary-kind" name="start_kind"><option value="fixed"{#if rule.start_kind == "fixed"} selected{/if}>Fixed time</option><option value="sunrise"{#if rule.start_kind == "sunrise"} selected{/if}>Sunrise</option><option value="sunset"{#if rule.start_kind == "sunset"} selected{/if}>Sunset</option></select></div>
+                <div class="field boundary-time-control"><label for="light-start-time-{rule.id}">Time</label><input id="light-start-time-{rule.id}" name="start_time" type="time" required value="{rule.start_time}"></div>
+                <div class="field boundary-offset-control"><label for="light-start-offset-{rule.id}">Offset in minutes</label><input id="light-start-offset-{rule.id}" name="start_offset_minutes" type="number" min="-180" max="180" required value="{rule.start_offset_minutes}"></div>
               </div>
               <span class="window-arrow" aria-hidden="true">→</span>
               <div class="boundary-card" data-boundary="end">
                 <strong>End</strong>
-                <div class="field"><label for="light-end-kind-{{ rule.id }}">Boundary</label><select id="light-end-kind-{{ rule.id }}" class="boundary-kind" name="end_kind"><option value="fixed"{% if rule.end_kind == "fixed" %} selected{% endif %}>Fixed time</option><option value="sunrise"{% if rule.end_kind == "sunrise" %} selected{% endif %}>Sunrise</option><option value="sunset"{% if rule.end_kind == "sunset" %} selected{% endif %}>Sunset</option></select></div>
-                <div class="field boundary-time-control"><label for="light-end-time-{{ rule.id }}">Time</label><input id="light-end-time-{{ rule.id }}" name="end_time" type="time" required value="{{ rule.end_time }}"></div>
-                <div class="field boundary-offset-control"><label for="light-end-offset-{{ rule.id }}">Offset in minutes</label><input id="light-end-offset-{{ rule.id }}" name="end_offset_minutes" type="number" min="-180" max="180" required value="{{ rule.end_offset_minutes }}"></div>
+                <div class="field"><label for="light-end-kind-{rule.id}">Boundary</label><select id="light-end-kind-{rule.id}" class="boundary-kind" name="end_kind"><option value="fixed"{#if rule.end_kind == "fixed"} selected{/if}>Fixed time</option><option value="sunrise"{#if rule.end_kind == "sunrise"} selected{/if}>Sunrise</option><option value="sunset"{#if rule.end_kind == "sunset"} selected{/if}>Sunset</option></select></div>
+                <div class="field boundary-time-control"><label for="light-end-time-{rule.id}">Time</label><input id="light-end-time-{rule.id}" name="end_time" type="time" required value="{rule.end_time}"></div>
+                <div class="field boundary-offset-control"><label for="light-end-offset-{rule.id}">Offset in minutes</label><input id="light-end-offset-{rule.id}" name="end_offset_minutes" type="number" min="-180" max="180" required value="{rule.end_offset_minutes}"></div>
               </div>
             </div>
             <p class="window-preview" aria-live="polite"></p>
             <div class="outside-window-options">
-              <div class="field"><label class="radio-card"><input type="radio" name="outside_window" value="turn_off"{% if rule.outside_turn_off %} checked{% endif %}><span><strong>Turn covered devices off outside the window</strong></span></label></div>
-              <div class="field"><label class="radio-card"><input type="radio" name="outside_window" value="stop_controlling"{% if not rule.outside_turn_off %} checked{% endif %}><span><strong>Stop controlling outside the window</strong></span></label></div>
+              <div class="field"><label class="radio-card"><input type="radio" name="outside_window" value="turn_off"{#if rule.outside_turn_off} checked{/if}><span><strong>Turn covered devices off outside the window</strong></span></label></div>
+              <div class="field"><label class="radio-card"><input type="radio" name="outside_window" value="stop_controlling"{#if !rule.outside_turn_off} checked{/if}><span><strong>Stop controlling outside the window</strong></span></label></div>
             </div>
             <button class="ui primary button small-button" type="submit"><i class="save outline icon" aria-hidden="true"></i>Save changes</button>
           </form>
-        {% endif %}
+        {/if}
       </details>
-    {% endfor %}
+    {/for}
   </div>
 
-  {% if panel.location_available %}
+  {#if panel.location_available}
     <div class="schedule-add-control">
       <details class="schedule-add-dropdown">
         <summary class="ui primary button schedule-add-button" aria-controls="schedule-add-menu">
@@ -176,7 +176,7 @@
     <details id="add-fixed-schedule" class="schedule-add-form">
       <summary>Add fixed-time schedule</summary>
       <h3 class="schedule-add-title">Add fixed-time schedule</h3>
-      <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
+      <form class="ui form schedule-form" hx-post="{panel.automation_base}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
         <div class="field"><label for="new-fixed-name">Name</label><input id="new-fixed-name" name="name" maxlength="64" required placeholder="Weekday morning"></div>
         <div class="field"><label for="new-fixed-time">Time</label><input id="new-fixed-time" name="time" type="time" required value="07:00"></div>
         <div class="field">
@@ -203,7 +203,7 @@
     <details id="add-solar-schedule" class="schedule-add-form">
       <summary>Add sunrise or sunset schedule</summary>
       <h3 class="schedule-add-title">Add sunrise or sunset schedule</h3>
-      <form class="ui form schedule-form" hx-post="{{ panel.automation_base | safe }}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
+      <form class="ui form schedule-form" hx-post="{panel.automation_base}/solar" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
         <div class="field"><label for="new-solar-name">Name</label><input id="new-solar-name" name="name" maxlength="64" required placeholder="Evening lights"></div>
         <div class="field">
           <label for="new-solar-event">Event</label>
@@ -241,7 +241,7 @@
     <details id="add-light-schedule" class="schedule-add-form light-rule-details">
       <summary>Add outdoor-light rule</summary>
       <h3 class="schedule-add-title">Add outdoor-light rule</h3>
-      <form class="ui form schedule-form light-rule-form" hx-post="{{ panel.automation_base | safe }}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button" {% if panel.weather %}data-sunrise="{{ panel.weather.sunrise }}" data-sunset="{{ panel.weather.sunset }}"{% endif %}>
+      <form class="ui form schedule-form light-rule-form" hx-post="{panel.automation_base}/light" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button" {#if panel.weather}data-sunrise="{panel.weather.sunrise}" data-sunset="{panel.weather.sunset}"{/if}>
         <p class="light-rule-intro">Control covered devices when daylight drops within a chosen time window.</p>
         <div class="field"><label for="new-light-name">Name</label><input id="new-light-name" name="name" maxlength="64" required value="Outdoor light"></div>
 
@@ -298,7 +298,7 @@
               <div class="field boundary-offset-control"><label for="new-light-end-offset">Offset in minutes</label><input id="new-light-end-offset" name="end_offset_minutes" type="number" min="-180" max="180" required value="0"></div>
             </div>
           </div>
-          <p class="window-preview" aria-live="polite">Active daily from <strong>9:00 AM</strong> until <strong>sunset{% if panel.weather %} (today: {{ panel.weather.sunset }}){% endif %}</strong>.</p>
+          <p class="window-preview" aria-live="polite">Active daily from <strong>9:00 AM</strong> until <strong>sunset{#if panel.weather} (today: {panel.weather.sunset}){/if}</strong>.</p>
           <details class="advanced-timing">
             <summary>Advanced timing</summary>
             <p>Either boundary can use a fixed time, sunrise, or sunset. Solar offsets may be from 180 minutes before to 180 minutes after the event.</p>
@@ -319,36 +319,36 @@
     </details>
       </div>
     </div>
-  {% else %}
+  {#else}
     <p class="advanced-note">At least one target device needs a location before adding server schedules.</p>
-  {% endif %}
+  {/if}
 
   <details class="conditions-disclosure">
     <summary>
       <span>Conditions and light history</span>
-      {% if panel.weather %}<small>{{ panel.weather.condition }} · {{ panel.weather.temperature }} °C · {{ panel.weather.shortwave_radiation }} W/m²</small>{% endif %}
+      {#if panel.weather}<small>{panel.weather.condition} · {panel.weather.temperature} °C · {panel.weather.shortwave_radiation} W/m²</small>{/if}
     </summary>
     <section class="ui fluid card weather-card">
       <div class="content">
         <div class="weather-header">
           <h3 class="header">Current conditions</h3>
-          <button class="ui mini button small-button" type="button" hx-get="{{ panel.automation_base | safe }}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="this"><i class="sync alternate icon" aria-hidden="true"></i>Refresh</button>
+          <button class="ui mini button small-button" type="button" hx-get="{panel.automation_base}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="this"><i class="sync alternate icon" aria-hidden="true"></i>Refresh</button>
         </div>
-        {% if panel.weather %}
+        {#if panel.weather}
           <dl class="weather-grid">
-            <div><dt>Local time</dt><dd>{{ panel.weather.local_time }} {{ panel.weather.timezone }}</dd></div>
-            <div><dt>Daylight</dt><dd>{% if panel.weather.is_day %}Day{% else %}Night{% endif %}</dd></div>
-            <div><dt>Weather</dt><dd>{{ panel.weather.condition }}</dd></div>
-            <div><dt>Light level</dt><dd>{{ panel.weather.shortwave_radiation }} W/m²</dd></div>
-            <div><dt>Cloud cover</dt><dd>{{ panel.weather.cloud_cover }}%</dd></div>
-            <div><dt>Temperature</dt><dd>{{ panel.weather.temperature }} °C</dd></div>
-            <div><dt>Feels like</dt><dd>{{ panel.weather.apparent_temperature }} °C</dd></div>
-            <div><dt>Precipitation</dt><dd>{{ panel.weather.precipitation }} mm</dd></div>
-            <div><dt>Sunrise</dt><dd>{{ panel.weather.sunrise }}</dd></div>
-            <div><dt>Sunset</dt><dd>{{ panel.weather.sunset }}</dd></div>
+            <div><dt>Local time</dt><dd>{panel.weather.local_time} {panel.weather.timezone}</dd></div>
+            <div><dt>Daylight</dt><dd>{#if panel.weather.is_day}Day{#else}Night{/if}</dd></div>
+            <div><dt>Weather</dt><dd>{panel.weather.condition}</dd></div>
+            <div><dt>Light level</dt><dd>{panel.weather.shortwave_radiation} W/m²</dd></div>
+            <div><dt>Cloud cover</dt><dd>{panel.weather.cloud_cover}%</dd></div>
+            <div><dt>Temperature</dt><dd>{panel.weather.temperature} °C</dd></div>
+            <div><dt>Feels like</dt><dd>{panel.weather.apparent_temperature} °C</dd></div>
+            <div><dt>Precipitation</dt><dd>{panel.weather.precipitation} mm</dd></div>
+            <div><dt>Sunrise</dt><dd>{panel.weather.sunrise}</dd></div>
+            <div><dt>Sunset</dt><dd>{panel.weather.sunset}</dd></div>
           </dl>
-          {% if panel.weather.previous_day_light %}
-            {% set history = panel.weather.previous_day_light %}
+          {#if panel.weather.previous_day_light}
+            {#let history = panel.weather.previous_day_light}
             <figure class="light-chart">
             <figcaption>
               <strong>Yesterday's outdoor light</strong>
@@ -358,41 +358,42 @@
               <line class="chart-grid" x1="40" y1="12" x2="312" y2="12"></line>
               <line class="chart-grid" x1="40" y1="66" x2="312" y2="66"></line>
               <line class="chart-axis" x1="40" y1="120" x2="312" y2="120"></line>
-              <text class="chart-label" x="36" y="15" text-anchor="end">{{ history.max_radiation }}</text>
-              <text class="chart-label" x="36" y="69" text-anchor="end">{{ history.mid_radiation }}</text>
+              <text class="chart-label" x="36" y="15" text-anchor="end">{history.max_radiation}</text>
+              <text class="chart-label" x="36" y="69" text-anchor="end">{history.mid_radiation}</text>
               <text class="chart-label" x="36" y="123" text-anchor="end">0</text>
               <text class="chart-label" x="40" y="138" text-anchor="middle">12 AM</text>
               <text class="chart-label" x="108" y="138" text-anchor="middle">6 AM</text>
               <text class="chart-label" x="176" y="138" text-anchor="middle">12 PM</text>
               <text class="chart-label" x="244" y="138" text-anchor="middle">6 PM</text>
               <text class="chart-label" x="312" y="138" text-anchor="middle">12 AM</text>
-              <line class="solar-line sunrise-line" x1="{{ history.sunrise_x }}" y1="12" x2="{{ history.sunrise_x }}" y2="120"></line>
-              <line class="solar-line sunset-line" x1="{{ history.sunset_x }}" y1="12" x2="{{ history.sunset_x }}" y2="120"></line>
-              <polyline class="light-average-line" points="{% for point in history.average_points %}{{ point.x }},{{ point.y }} {% endfor %}">
-                <title>{{ history.average_days }}-day hourly average</title>
+              <line class="solar-line sunrise-line" x1="{history.sunrise_x}" y1="12" x2="{history.sunrise_x}" y2="120"></line>
+              <line class="solar-line sunset-line" x1="{history.sunset_x}" y1="12" x2="{history.sunset_x}" y2="120"></line>
+              <polyline class="light-average-line" points="{#for point in history.average_points}{point.x},{point.y} {/for}">
+                <title>{history.average_days}-day hourly average</title>
               </polyline>
-              <polyline class="light-line" points="{% for point in history.points %}{{ point.x }},{{ point.y }} {% endfor %}"></polyline>
-              {% for point in history.points %}
-                <circle class="light-point" cx="{{ point.x }}" cy="{{ point.y }}" r="2.5">
-                  <title>{{ point.time }} — {{ point.radiation }} W/m²</title>
+              <polyline class="light-line" points="{#for point in history.points}{point.x},{point.y} {/for}"></polyline>
+              {#for point in history.points}
+                <circle class="light-point" cx="{point.x}" cy="{point.y}" r="2.5">
+                  <title>{point.time} — {point.radiation} W/m²</title>
                 </circle>
-              {% endfor %}
+              {/for}
             </svg>
             <div class="chart-legend">
-              <span><i class="light-average-key"></i>{{ history.average_days }}-day hourly average</span>
-              <span><i class="sunrise-key"></i>Sunrise {{ history.sunrise }}</span>
-              <span><i class="sunset-key"></i>Sunset {{ history.sunset }}</span>
+              <span><i class="light-average-key"></i>{history.average_days}-day hourly average</span>
+              <span><i class="sunrise-key"></i>Sunrise {history.sunrise}</span>
+              <span><i class="sunset-key"></i>Sunset {history.sunset}</span>
             </div>
             </figure>
-          {% endif %}
-        {% else %}
+            {/let}
+          {/if}
+        {#else}
           <p class="description schedule-status">Current weather is unavailable.</p>
-        {% endif %}
+        {/if}
       </div>
     </section>
   </details>
 
-  {% if panel.schedules.rules %}
+  {#if panel.schedules.rules}
     <section class="plug-migration">
       <div class="schedule-header">
         <div>
@@ -400,27 +401,27 @@
           <span class="schedule-status">These run independently and may conflict with server schedules.</span>
         </div>
       </div>
-      {% for rule in panel.schedules.rules %}
+      {#for rule in panel.schedules.rules}
         <article class="ui fluid card schedule-rule">
           <div class="content schedule-summary">
             <div>
-              <h4 class="header">{{ rule.name }}</h4>
-              <p class="meta schedule-meta">{{ rule.time }} · {{ rule.action }} · {{ rule.weekday_summary }}{% if not rule.enabled %} · Disabled{% endif %}</p>
+              <h4 class="header">{rule.name}</h4>
+              <p class="meta schedule-meta">{rule.time} · {rule.action} · {rule.weekday_summary}{#if !rule.enabled} · Disabled{/if}</p>
             </div>
-            <span class="ui mini label state {% if rule.migratable %}state-on{% else %}state-unavailable{% endif %}">{% if rule.migratable %}Ready{% else %}Advanced{% endif %}</span>
+            <span class="ui mini label state {#if rule.migratable}state-on{#else}state-unavailable{/if}">{#if rule.migratable}Ready{#else}Advanced{/if}</span>
           </div>
         </article>
-      {% endfor %}
-      {% if panel.schedules.migratable_count > 0 and panel.location_available %}
-        <form hx-post="{{ panel.automation_base | safe }}/migrate" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Import compatible schedules to the server and remove their originals from the plug?" hx-disable="find button">
-          <button class="ui primary fluid button small-button migration-button" type="submit"><i class="download icon" aria-hidden="true"></i>Migrate {{ panel.schedules.migratable_count }} compatible schedule{% if panel.schedules.migratable_count != 1 %}s{% endif %}</button>
+      {/for}
+      {#if panel.schedules.migratable_count > 0 && panel.location_available}
+        <form hx-post="{panel.automation_base}/migrate" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Import compatible schedules to the server and remove their originals from the plug?" hx-disable="find button">
+          <button class="ui primary fluid button small-button migration-button" type="submit"><i class="download icon" aria-hidden="true"></i>Migrate {panel.schedules.migratable_count} compatible schedule{#if panel.schedules.migratable_count != 1}s{/if}</button>
         </form>
-      {% elif panel.schedules.migratable_count > 0 %}
+      {#else if panel.schedules.migratable_count > 0}
         <p class="advanced-note">Configure the plug's location before migrating schedules.</p>
-      {% endif %}
-      {% if panel.schedules.unsupported_count > 0 %}
-        <p class="advanced-note">{{ panel.schedules.unsupported_count }} advanced schedule{% if panel.schedules.unsupported_count != 1 %}s are{% else %} is{% endif %} not compatible and will remain on the plug.</p>
-      {% endif %}
+      {/if}
+      {#if panel.schedules.unsupported_count > 0}
+        <p class="advanced-note">{panel.schedules.unsupported_count} advanced schedule{#if panel.schedules.unsupported_count != 1}s are{#else} is{/if} not compatible and will remain on the plug.</p>
+      {/if}
     </section>
-  {% endif %}
+  {/if}
 </dialog>

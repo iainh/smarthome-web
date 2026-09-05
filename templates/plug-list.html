@@ -1,33 +1,33 @@
 <section id="plug-list" class="device-list" aria-live="polite">
-  {% if notice %}
+  {#if notice}
     <div class="ui icon info message operation-notice">
       <i class="info circle icon" aria-hidden="true"></i>
-      <div class="content"><p>{{ notice }}</p></div>
+      <div class="content"><p>{notice}</p></div>
     </div>
-  {% endif %}
-  {% if groups %}
+  {/if}
+  {#if groups}
     <section class="device-section" aria-labelledby="groups-heading">
       <h2 id="groups-heading" class="section-heading">Groups</h2>
       <div class="ui cards plug-grid">
-        {% for group in groups %}
-          {% include "group.html" %}
-        {% endfor %}
+        {#for group in groups}
+          {#include group.html /}
+        {/for}
       </div>
     </section>
-  {% endif %}
+  {/if}
   <section class="device-section" aria-labelledby="devices-heading">
     <h2 id="devices-heading" class="section-heading">Devices</h2>
-    {% if plugs %}
+    {#if plugs}
       <div class="ui cards plug-grid">
-        {% for plug in plugs %}
-          {% include "plug.html" %}
-        {% endfor %}
+        {#for plug in plugs}
+          {#include plug.html /}
+        {/for}
       </div>
-    {% else %}
+    {#else}
       <div class="ui placeholder segment empty">
         <h3 class="ui icon header"><i class="plug icon" aria-hidden="true"></i>No devices remembered</h3>
         <p>Scan the network to add compatible smart plugs.</p>
       </div>
-    {% endif %}
+    {/if}
   </section>
 </section>
