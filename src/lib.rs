@@ -7,10 +7,13 @@ use std::fmt;
 use std::io;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, UdpSocket};
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 const SMART_HOME_PORT: u16 = 9999;
 const MAX_RESPONSE_LENGTH: usize = 16 * 1024;
+const MAX_INVENTORY_WORKERS: usize = 64;
 const GET_SYSINFO: &[u8] = br#"{"system":{"get_sysinfo":{}}}"#;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -411,10 +414,25 @@ impl SmartHomeClient {
             return self.get_inventory(discovery_timeout);
         }
 
-        let mut devices: Vec<_> = addresses
-            .iter()
-            .filter_map(|address| self.get_sysinfo(*address).ok())
-            .collect();
+        let client = Self::with_timeout(self.timeout.min(discovery_timeout));
+        let worker_count = addresses.len().min(MAX_INVENTORY_WORKERS);
+        let chunk_size = addresses.len().div_ceil(worker_count);
+        let mut devices = thread::scope(|scope| {
+            let (sender, receiver) = mpsc::channel();
+            for chunk in addresses.chunks(chunk_size) {
+                let sender = sender.clone();
+                let client = &client;
+                scope.spawn(move || {
+                    for address in chunk {
+                        if let Ok(device) = client.get_sysinfo(*address) {
+                            let _ = sender.send(device);
+                        }
+                    }
+                });
+            }
+            drop(sender);
+            receiver.into_iter().collect::<Vec<_>>()
+        });
         devices.sort_by_key(|device| device.address);
         Ok(devices)
     }

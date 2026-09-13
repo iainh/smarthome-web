@@ -22,13 +22,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::error::Error as StdError;
 use std::fmt;
-use std::net::{IpAddr, SocketAddr};
+use std::io;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task;
 
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
+const SUBNET_SCAN_TIMEOUT: Duration = Duration::from_millis(500);
 const WEATHER_HISTORY_RETENTION: Duration = Duration::from_secs(90 * 24 * 60 * 60);
 const WEATHER_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -39,6 +41,7 @@ struct AppState {
     groups: Arc<GroupEngine>,
     database: Arc<Database>,
     device_addresses: Vec<IpAddr>,
+    scan_addresses: Option<Vec<IpAddr>>,
 }
 
 #[derive(Debug, TemplateValue)]
@@ -448,6 +451,11 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         Err(std::env::VarError::NotPresent) => Vec::new(),
         Err(error) => return Err(error.into()),
     };
+    let scan_addresses = match std::env::var("DEVICE_SUBNET") {
+        Ok(value) => Some(parse_device_subnet(&value)?),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(error.into()),
+    };
     let database = Arc::new(Database::open(database_path)?);
     database.migrate_legacy_json(automation_path, group_path)?;
     let mock_enabled = mock_devices.is_some();
@@ -468,6 +476,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         groups,
         database: database.clone(),
         device_addresses: device_addresses.clone(),
+        scan_addresses,
     });
     tokio::spawn(automations.run(state.client.clone(), device_addresses));
     tokio::spawn(purge_weather_history(database));
@@ -1258,11 +1267,15 @@ async fn delete_countdown(
 
 async fn scan_for_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
     let client = state.client.clone();
-    let device_addresses = state.device_addresses.clone();
-    Ok(task::spawn_blocking(move || {
-        client.get_inventory_from(&device_addresses, DISCOVERY_TIMEOUT)
-    })
-    .await??)
+    let (device_addresses, timeout) = state
+        .scan_addresses
+        .as_ref()
+        .map(|addresses| (addresses.clone(), SUBNET_SCAN_TIMEOUT))
+        .unwrap_or_else(|| (state.device_addresses.clone(), DISCOVERY_TIMEOUT));
+    Ok(
+        task::spawn_blocking(move || client.get_inventory_from(&device_addresses, timeout))
+            .await??,
+    )
 }
 
 fn remembered_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
@@ -1453,6 +1466,45 @@ fn parse_device_addresses(value: &str) -> Result<Vec<IpAddr>, std::net::AddrPars
     addresses.sort_unstable();
     addresses.dedup();
     Ok(addresses)
+}
+
+fn parse_device_subnet(value: &str) -> io::Result<Vec<IpAddr>> {
+    let (address, prefix) = value.trim().split_once('/').ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "device subnet must use CIDR notation",
+        )
+    })?;
+    let address: Ipv4Addr = address.trim().parse().map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid device subnet address: {error}"),
+        )
+    })?;
+    let prefix: u8 = prefix.trim().parse().map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid device subnet prefix: {error}"),
+        )
+    })?;
+    if !(16..=32).contains(&prefix) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "device subnet prefix must be between 16 and 32",
+        ));
+    }
+
+    let mask = u32::MAX << (32 - prefix);
+    let network = u32::from(address) & mask;
+    let broadcast = network | !mask;
+    let (first, last) = if prefix <= 30 {
+        (network + 1, broadcast - 1)
+    } else {
+        (network, broadcast)
+    };
+    Ok((first..=last)
+        .map(|address| IpAddr::V4(Ipv4Addr::from(address)))
+        .collect())
 }
 
 async fn get_plug(client: SmartHomeClient, address: IpAddr) -> Result<SmartPlug, AppError> {
@@ -2851,6 +2903,20 @@ mod tests {
             ]
         );
         assert!(parse_device_addresses("192.0.2.1,not-an-address").is_err());
+    }
+
+    #[test]
+    fn device_subnet_expands_to_every_usable_address() {
+        assert_eq!(
+            parse_device_subnet("192.0.2.2/30").unwrap(),
+            vec![
+                "192.0.2.1".parse::<IpAddr>().unwrap(),
+                "192.0.2.2".parse::<IpAddr>().unwrap(),
+            ]
+        );
+        assert_eq!(parse_device_subnet("192.0.2.1/32").unwrap().len(), 1);
+        assert!(parse_device_subnet("192.0.2.0").is_err());
+        assert!(parse_device_subnet("192.0.2.0/8").is_err());
     }
 
     #[test]
