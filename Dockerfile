@@ -22,6 +22,7 @@ COPY --from=builder /app/target/release/smarthome-web /usr/local/bin/smarthome-w
 
 ENV BIND_ADDR=0.0.0.0:3000
 ENV DATABASE_PATH=/data/tddp-client.sqlite3
+# Set PEBBLE_API_TOKEN_FILE to a mounted file containing 64 lowercase hex characters.
 
 VOLUME ["/data"]
 EXPOSE 3000

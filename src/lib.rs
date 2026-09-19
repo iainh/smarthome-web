@@ -442,12 +442,31 @@ impl SmartHomeClient {
         parse_sysinfo(response, address)
     }
 
+    /// Queries a device while enforcing one deadline across connect, write, and read.
+    pub fn get_sysinfo_before(&self, address: IpAddr, deadline: Instant) -> Result<SmartPlug> {
+        let response =
+            self.query_command_before(address, "system", "get_sysinfo", json!({}), deadline)?;
+        parse_sysinfo(response, address)
+    }
+
     pub fn set_relay(&self, address: IpAddr, on: bool) -> Result<()> {
         self.query_command(
             address,
             "system",
             "set_relay_state",
             json!({ "state": u8::from(on) }),
+        )?;
+        Ok(())
+    }
+
+    /// Sets relay state while enforcing one deadline across the complete request.
+    pub fn set_relay_before(&self, address: IpAddr, on: bool, deadline: Instant) -> Result<()> {
+        self.query_command_before(
+            address,
+            "system",
+            "set_relay_state",
+            json!({ "state": u8::from(on) }),
+            deadline,
         )?;
         Ok(())
     }
@@ -463,6 +482,28 @@ impl SmartHomeClient {
             "smartlife.iot.dimmer",
             "set_brightness",
             json!({ "brightness": brightness }),
+        )?;
+        Ok(())
+    }
+
+    /// Sets dimmer brightness while enforcing one deadline across the complete request.
+    pub fn set_brightness_before(
+        &self,
+        address: IpAddr,
+        brightness: u8,
+        deadline: Instant,
+    ) -> Result<()> {
+        if !(1..=100).contains(&brightness) {
+            return Err(Error::InvalidInput(format!(
+                "brightness must be between 1 and 100, got {brightness}"
+            )));
+        }
+        self.query_command_before(
+            address,
+            "smartlife.iot.dimmer",
+            "set_brightness",
+            json!({ "brightness": brightness }),
+            deadline,
         )?;
         Ok(())
     }
@@ -735,6 +776,19 @@ impl SmartHomeClient {
         read_frame(&mut stream)
     }
 
+    fn query_raw_before(
+        &self,
+        address: IpAddr,
+        request: &Value,
+        deadline: Instant,
+    ) -> Result<Value> {
+        let address = SocketAddr::new(address, SMART_HOME_PORT);
+        let mut stream = TcpStream::connect_timeout(&address, remaining(deadline)?)?;
+        stream.set_nodelay(true)?;
+        write_all_before(&mut stream, &encode_frame(request)?, deadline)?;
+        read_frame_before(&mut stream, deadline)
+    }
+
     /// Sends an arbitrary JSON protocol request and returns the complete response.
     pub fn query_raw_json(&self, address: IpAddr, request: &str) -> Result<Value> {
         let request = serde_json::from_str(request)?;
@@ -803,6 +857,76 @@ impl SmartHomeClient {
         let response = self.query_raw(address, &command_request(module, command, arguments))?;
         command_response(response, module, command)
     }
+
+    fn query_command_before(
+        &self,
+        address: IpAddr,
+        module: &str,
+        command: &str,
+        arguments: Value,
+        deadline: Instant,
+    ) -> Result<Value> {
+        let response = self.query_raw_before(
+            address,
+            &command_request(module, command, arguments),
+            deadline,
+        )?;
+        command_response(response, module, command)
+    }
+}
+
+fn remaining(deadline: Instant) -> Result<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| {
+            Error::Io(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "operation deadline elapsed",
+            ))
+        })
+}
+
+fn write_all_before(stream: &mut TcpStream, mut bytes: &[u8], deadline: Instant) -> Result<()> {
+    while !bytes.is_empty() {
+        stream.set_write_timeout(Some(remaining(deadline)?))?;
+        match stream.write(bytes) {
+            Ok(0) => return Err(io::Error::from(io::ErrorKind::WriteZero).into()),
+            Ok(written) => bytes = &bytes[written..],
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+fn read_exact_before(
+    stream: &mut TcpStream,
+    mut bytes: &mut [u8],
+    deadline: Instant,
+) -> Result<()> {
+    while !bytes.is_empty() {
+        stream.set_read_timeout(Some(remaining(deadline)?))?;
+        match stream.read(bytes) {
+            Ok(0) => return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into()),
+            Ok(read) => bytes = &mut bytes[read..],
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+fn read_frame_before(stream: &mut TcpStream, deadline: Instant) -> Result<Value> {
+    let mut length = [0_u8; 4];
+    read_exact_before(stream, &mut length, deadline)?;
+    let length = u32::from_be_bytes(length) as usize;
+    if length > MAX_RESPONSE_LENGTH {
+        return Err(Error::ResponseTooLarge(length));
+    }
+    let mut payload = vec![0_u8; length];
+    read_exact_before(stream, &mut payload, deadline)?;
+    Ok(serde_json::from_slice(&decrypt(&payload))?)
 }
 
 impl Default for SmartHomeClient {
@@ -1121,6 +1245,22 @@ mod tests {
         assert!(matches!(
             client.set_brightness(address, 101),
             Err(Error::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn expired_deadline_prevents_network_io() {
+        let client = SmartHomeClient::new();
+        let error = client
+            .get_sysinfo_before(
+                IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+                Instant::now() - Duration::from_millis(1),
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            Error::Io(error) if error.kind() == io::ErrorKind::TimedOut
         ));
     }
 

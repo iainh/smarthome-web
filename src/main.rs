@@ -1,3 +1,4 @@
+mod api;
 mod automation;
 mod database;
 mod group;
@@ -478,6 +479,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
         device_addresses: device_addresses.clone(),
         scan_addresses,
     });
+    let api = api::router(state.clone(), api::Auth::from_environment()?);
     tokio::spawn(automations.run(state.client.clone(), device_addresses));
     tokio::spawn(purge_weather_history(database));
     let app = Router::new()
@@ -577,6 +579,7 @@ async fn main() -> Result<(), Box<dyn StdError + Send + Sync>> {
             "/plugs/{address}/countdown/{id}",
             axum::routing::delete(delete_countdown),
         )
+        .merge(api)
         .with_state(state);
 
     let address: SocketAddr = std::env::var("BIND_ADDR")

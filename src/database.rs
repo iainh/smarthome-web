@@ -18,6 +18,12 @@ pub struct Database {
     connection: Mutex<Connection>,
 }
 
+#[derive(Debug, Clone)]
+pub struct StoredDevice {
+    pub device: SmartPlug,
+    pub last_seen_at: i64,
+}
+
 #[derive(Debug, serde::Serialize)]
 pub struct EventRecord {
     pub occurred_at: i64,
@@ -224,10 +230,18 @@ impl Database {
     }
 
     pub fn devices(&self) -> Result<Vec<SmartPlug>> {
+        Ok(self
+            .stored_devices()?
+            .into_iter()
+            .map(|stored| stored.device)
+            .collect())
+    }
+
+    pub fn stored_devices(&self) -> Result<Vec<StoredDevice>> {
         self.with_connection(|connection| {
             let mut statement = connection.prepare(
                 "SELECT address, model, alias, device_id, software_version, relay_on,
-                        brightness, latitude, longitude
+                        brightness, latitude, longitude, last_seen
                  FROM devices ORDER BY alias COLLATE NOCASE, device_id",
             )?;
             let stored = statement
@@ -242,6 +256,7 @@ impl Database {
                         row.get::<_, Option<u8>>(6)?,
                         row.get::<_, Option<f64>>(7)?,
                         row.get::<_, Option<f64>>(8)?,
+                        row.get::<_, i64>(9)?,
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -258,17 +273,21 @@ impl Database {
                         brightness,
                         latitude,
                         longitude,
+                        last_seen_at,
                     )| {
-                        Ok(SmartPlug {
-                            address: address.parse::<IpAddr>()?,
-                            model,
-                            alias,
-                            device_id,
-                            software_version,
-                            relay_on,
-                            brightness,
-                            latitude,
-                            longitude,
+                        Ok(StoredDevice {
+                            device: SmartPlug {
+                                address: address.parse::<IpAddr>()?,
+                                model,
+                                alias,
+                                device_id,
+                                software_version,
+                                relay_on,
+                                brightness,
+                                latitude,
+                                longitude,
+                            },
+                            last_seen_at,
                         })
                     },
                 )
