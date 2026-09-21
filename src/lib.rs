@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 const SMART_HOME_PORT: u16 = 9999;
 const MAX_RESPONSE_LENGTH: usize = 16 * 1024;
 const MAX_INVENTORY_WORKERS: usize = 64;
+const DISCOVERY_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 const GET_SYSINFO: &[u8] = br#"{"system":{"get_sysinfo":{}}}"#;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -362,46 +363,30 @@ impl SmartHomeClient {
     pub fn get_inventory(&self, timeout: Duration) -> Result<Vec<SmartPlug>> {
         let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
         socket.set_broadcast(true)?;
-        socket.send_to(
-            &encrypt(GET_SYSINFO),
-            SocketAddr::from((Ipv4Addr::BROADCAST, SMART_HOME_PORT)),
-        )?;
+        discover_inventory(
+            &socket,
+            &[SocketAddr::from((Ipv4Addr::BROADCAST, SMART_HOME_PORT))],
+            timeout,
+            DISCOVERY_RETRY_INTERVAL,
+        )
+    }
 
-        let deadline = Instant::now()
-            .checked_add(timeout)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "timeout is too large"))?;
-        let mut devices = Vec::new();
-        let mut buffer = [0_u8; 2048];
-
-        while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
-            socket.set_read_timeout(Some(remaining))?;
-
-            match socket.recv_from(&mut buffer) {
-                Ok((length, peer)) => {
-                    if let Some(device) = parse_device(&buffer[..length], peer.ip()) {
-                        if !devices
-                            .iter()
-                            .any(|known: &SmartPlug| known.address == device.address)
-                        {
-                            devices.push(device);
-                        }
-                    }
-                }
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                    ) =>
-                {
-                    break;
-                }
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => return Err(error.into()),
-            }
+    /// Sends UDP discovery directly to each address and collects responses until the timeout.
+    pub fn get_inventory_on_subnet(
+        &self,
+        addresses: &[IpAddr],
+        timeout: Duration,
+    ) -> Result<Vec<SmartPlug>> {
+        if addresses.is_empty() {
+            return Ok(Vec::new());
         }
 
-        devices.sort_by_key(|device| device.address);
-        Ok(devices)
+        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+        let targets: Vec<_> = addresses
+            .iter()
+            .map(|address| SocketAddr::new(*address, SMART_HOME_PORT))
+            .collect();
+        discover_inventory(&socket, &targets, timeout, DISCOVERY_RETRY_INTERVAL)
     }
 
     /// Queries configured devices directly, or falls back to broadcast discovery when empty.
@@ -937,6 +922,68 @@ impl Default for SmartHomeClient {
     }
 }
 
+fn discover_inventory(
+    socket: &UdpSocket,
+    targets: &[SocketAddr],
+    timeout: Duration,
+    retry_interval: Duration,
+) -> Result<Vec<SmartPlug>> {
+    let request = encrypt(GET_SYSINFO);
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "timeout is too large"))?;
+    let mut next_send = Instant::now();
+    let mut devices = Vec::new();
+    let mut buffer = [0_u8; MAX_RESPONSE_LENGTH];
+
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        if now >= next_send {
+            for target in targets {
+                socket.send_to(&request, target)?;
+            }
+            next_send = now.checked_add(retry_interval).unwrap_or(deadline);
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let remaining = deadline.duration_since(now);
+        let wait = remaining.min(next_send.saturating_duration_since(now));
+        if wait.is_zero() {
+            continue;
+        }
+        socket.set_read_timeout(Some(wait))?;
+
+        match socket.recv_from(&mut buffer) {
+            Ok((length, peer)) => {
+                if let Some(device) = parse_device(&buffer[..length], peer.ip()) {
+                    if !devices
+                        .iter()
+                        .any(|known: &SmartPlug| known.address == device.address)
+                    {
+                        devices.push(device);
+                    }
+                }
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) => {}
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    devices.sort_by_key(|device| device.address);
+    Ok(devices)
+}
+
 fn encrypt(plaintext: &[u8]) -> Vec<u8> {
     let mut key = 171_u8;
     plaintext
@@ -1207,6 +1254,38 @@ mod tests {
                 longitude: Some(-81.0171),
             })
         );
+    }
+
+    #[test]
+    fn discovery_retries_dropped_requests_and_deduplicates_responses() {
+        let responder = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        responder
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let target = responder.local_addr().unwrap();
+        let response = encrypt(br#"{"system":{"get_sysinfo":{"model":"HS100","alias":"Plug","deviceId":"device-1","sw_ver":"1.0","relay_state":0,"err_code":0}}}"#);
+        let server = thread::spawn(move || {
+            let mut request = [0_u8; 128];
+            let (length, _) = responder.recv_from(&mut request).unwrap();
+            assert_eq!(decrypt(&request[..length]), GET_SYSINFO);
+
+            let (_, peer) = responder.recv_from(&mut request).unwrap();
+            responder.send_to(&response, peer).unwrap();
+            responder.send_to(&response, peer).unwrap();
+        });
+        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+
+        let devices = discover_inventory(
+            &socket,
+            &[target],
+            Duration::from_millis(150),
+            Duration::from_millis(20),
+        )
+        .unwrap();
+
+        server.join().unwrap();
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].device_id, "device-1");
     }
 
     #[test]

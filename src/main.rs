@@ -31,7 +31,6 @@ use std::time::Duration;
 use tokio::task;
 
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
-const SUBNET_SCAN_TIMEOUT: Duration = Duration::from_millis(500);
 const WEATHER_HISTORY_RETENTION: Duration = Duration::from_secs(90 * 24 * 60 * 60);
 const WEATHER_PURGE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -1270,15 +1269,13 @@ async fn delete_countdown(
 
 async fn scan_for_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
     let client = state.client.clone();
-    let (device_addresses, timeout) = state
-        .scan_addresses
-        .as_ref()
-        .map(|addresses| (addresses.clone(), SUBNET_SCAN_TIMEOUT))
-        .unwrap_or_else(|| (state.device_addresses.clone(), DISCOVERY_TIMEOUT));
-    Ok(
-        task::spawn_blocking(move || client.get_inventory_from(&device_addresses, timeout))
-            .await??,
-    )
+    let scan_addresses = state.scan_addresses.clone();
+    let device_addresses = state.device_addresses.clone();
+    Ok(task::spawn_blocking(move || match scan_addresses {
+        Some(addresses) => client.get_inventory_on_subnet(&addresses, DISCOVERY_TIMEOUT),
+        None => client.get_inventory_from(&device_addresses, DISCOVERY_TIMEOUT),
+    })
+    .await??)
 }
 
 fn remembered_plugs(state: &AppState) -> Result<Vec<SmartPlug>, AppError> {
