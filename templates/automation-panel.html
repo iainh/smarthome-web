@@ -8,7 +8,7 @@
     <button class="ui basic icon button pane-close" type="button" aria-label="Close automation pane" onclick="this.closest('dialog').close()" autofocus><i class="close icon" aria-hidden="true"></i></button>
   </div>
 
-  <p class="automation-intro">All schedules below are stored and evaluated by this server every five minutes. If several rules apply together, the most recently added rule wins.</p>
+  <p class="automation-intro">Schedules are stored by this server. Timed schedules are checked every 30 seconds, while weather and light levels refresh every five minutes. If several rules apply together, the most recently added rule wins.</p>
 
   {#if panel.calendar}
     <section class="ui segment week-calendar" data-calendar-view="state" data-automation-base="{panel.automation_base}" aria-labelledby="week-calendar-title">

@@ -3642,6 +3642,9 @@ mod tests {
 
         let fragment = render(AutomationPanelTemplate { panel: &panel });
 
+        assert!(fragment.contains(
+            "Timed schedules are checked every 30 seconds, while weather and light levels refresh every five minutes."
+        ));
         assert!(fragment.contains("8:15 PM GMT-4"));
         assert!(fragment.contains("42.5 W/m²"));
         assert!(fragment.contains("Overcast"));

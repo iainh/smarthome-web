@@ -1,4 +1,4 @@
-use crate::database::{Database, WeatherObservation};
+use crate::database::{unix_timestamp, Database, WeatherObservation};
 use crate::group::automation_group_id;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,8 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-const EVALUATION_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const SCHEDULE_EVALUATION_INTERVAL: Duration = Duration::from_secs(30);
+const WEATHER_EVALUATION_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const SOLAR_TRIGGER_WINDOW_SECONDS: i64 = 20 * 60;
 const LIGHT_AVERAGE_DAYS: u8 = 30;
 
@@ -257,46 +258,66 @@ impl AutomationEngine {
         client: SmartHomeClient,
         device_addresses: Vec<IpAddr>,
     ) {
-        let mut interval = tokio::time::interval(EVALUATION_INTERVAL);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut forecasts = HashMap::new();
+        if let Err(error) = self
+            .refresh_weather_and_evaluate(&client, &device_addresses, &mut forecasts)
+            .await
+        {
+            eprintln!("automation evaluation failed: {error}");
+        }
+
+        let mut schedule_interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + SCHEDULE_EVALUATION_INTERVAL,
+            SCHEDULE_EVALUATION_INTERVAL,
+        );
+        let mut weather_interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + WEATHER_EVALUATION_INTERVAL,
+            WEATHER_EVALUATION_INTERVAL,
+        );
+        schedule_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        weather_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         loop {
-            interval.tick().await;
-            if let Err(error) = self.evaluate(&client, &device_addresses).await {
-                eprintln!("automation evaluation failed: {error}");
+            tokio::select! {
+                _ = schedule_interval.tick() => {
+                    if let Err(error) = self
+                        .evaluate_timed_schedules(&client, &device_addresses, &forecasts)
+                        .await
+                    {
+                        eprintln!("timed schedule evaluation failed: {error}");
+                    }
+                }
+                _ = weather_interval.tick() => {
+                    if let Err(error) = self
+                        .refresh_weather_and_evaluate(&client, &device_addresses, &mut forecasts)
+                        .await
+                    {
+                        eprintln!("weather automation evaluation failed: {error}");
+                    }
+                }
             }
         }
     }
 
-    async fn evaluate(&self, client: &SmartHomeClient, device_addresses: &[IpAddr]) -> Result<()> {
+    async fn refresh_weather_and_evaluate(
+        &self,
+        client: &SmartHomeClient,
+        device_addresses: &[IpAddr],
+        forecasts: &mut HashMap<Coordinate, WeatherSnapshot>,
+    ) -> Result<()> {
         let rules = self.all_rules()?;
         if rules.is_empty() {
             return Ok(());
         }
 
-        let discovery_client = client.clone();
-        let mut device_addresses = device_addresses.to_vec();
-        device_addresses.extend(
-            self.database
-                .devices()?
-                .into_iter()
-                .map(|device| device.address),
-        );
-        device_addresses.sort_unstable();
-        device_addresses.dedup();
-        let plugs = tokio::task::spawn_blocking(move || {
-            discovery_client.get_inventory_from(&device_addresses, Duration::from_secs(3))
-        })
-        .await??;
-        self.database.remember_devices(&plugs)?;
+        let plugs = self.discover_plugs(client, device_addresses).await?;
         let plugs: HashMap<_, _> = plugs
             .into_iter()
             .map(|plug| (plug.device_id.clone(), plug))
             .collect();
-        let mut forecasts = HashMap::new();
-        let mut triggered_timed_rules = Vec::new();
-        let mut device_evaluations = HashMap::new();
 
-        for rule in rules {
+        let mut coordinates = Vec::new();
+        for rule in &rules {
             if !rule.enabled {
                 continue;
             }
@@ -311,23 +332,133 @@ impl AutomationEngine {
             let Some(key) = Coordinate::from_plug(plug) else {
                 continue;
             };
-            if let std::collections::hash_map::Entry::Vacant(entry) = forecasts.entry(key) {
-                entry.insert(self.fetch_weather(key, 1, 1).await?);
+            if !coordinates.contains(&key) {
+                coordinates.push(key);
             }
-            let forecast = &forecasts[&key];
-            let Some(evaluation) = evaluate_rule(&rule, forecast) else {
+        }
+        forecasts.retain(|coordinate, _| coordinates.contains(coordinate));
+        for coordinate in coordinates {
+            forecasts.insert(coordinate, self.fetch_weather(coordinate, 1, 1).await?);
+        }
+
+        let plan = self.evaluation_plan(
+            &rules,
+            &plugs,
+            forecasts,
+            unix_timestamp()?,
+            EvaluationCycle::Weather,
+        )?;
+        self.apply_plan(client, &plugs, plan).await
+    }
+
+    async fn evaluate_timed_schedules(
+        &self,
+        client: &SmartHomeClient,
+        device_addresses: &[IpAddr],
+        forecasts: &HashMap<Coordinate, WeatherSnapshot>,
+    ) -> Result<()> {
+        let rules = self.all_rules()?;
+        if rules.is_empty() || forecasts.is_empty() {
+            return Ok(());
+        }
+        let remembered: HashMap<_, _> = self
+            .database
+            .devices()?
+            .into_iter()
+            .map(|plug| (plug.device_id.clone(), plug))
+            .collect();
+        let now = unix_timestamp()?;
+        if self
+            .evaluation_plan(&rules, &remembered, forecasts, now, EvaluationCycle::Timed)?
+            .device_evaluations
+            .is_empty()
+        {
+            return Ok(());
+        }
+
+        let plugs = self.discover_plugs(client, device_addresses).await?;
+        let plugs: HashMap<_, _> = plugs
+            .into_iter()
+            .map(|plug| (plug.device_id.clone(), plug))
+            .collect();
+        let plan = self.evaluation_plan(&rules, &plugs, forecasts, now, EvaluationCycle::Timed)?;
+        self.apply_plan(client, &plugs, plan).await
+    }
+
+    async fn discover_plugs(
+        &self,
+        client: &SmartHomeClient,
+        configured_addresses: &[IpAddr],
+    ) -> Result<Vec<SmartPlug>> {
+        let discovery_client = client.clone();
+        let mut addresses = configured_addresses.to_vec();
+        addresses.extend(
+            self.database
+                .devices()?
+                .into_iter()
+                .map(|device| device.address),
+        );
+        addresses.sort_unstable();
+        addresses.dedup();
+        let plugs = tokio::task::spawn_blocking(move || {
+            discovery_client.get_inventory_from(&addresses, Duration::from_secs(3))
+        })
+        .await??;
+        self.database.remember_devices(&plugs)?;
+        Ok(plugs)
+    }
+
+    fn evaluation_plan(
+        &self,
+        rules: &[AutomationRule],
+        plugs: &HashMap<String, SmartPlug>,
+        forecasts: &HashMap<Coordinate, WeatherSnapshot>,
+        now: i64,
+        cycle: EvaluationCycle,
+    ) -> Result<EvaluationPlan> {
+        let mut plan = EvaluationPlan::default();
+        for rule in rules {
+            if !rule.enabled {
+                continue;
+            }
+            let target_device_ids = self.target_device_ids(&rule.device_id)?;
+            let Some(plug) = target_device_ids.iter().find_map(|device_id| {
+                plugs
+                    .get(device_id)
+                    .filter(|plug| Coordinate::from_plug(plug).is_some())
+            }) else {
+                continue;
+            };
+            let Some(forecast) = Coordinate::from_plug(plug).and_then(|key| forecasts.get(&key))
+            else {
+                continue;
+            };
+            let Some(evaluation) = evaluate_rule(rule, forecast, now, cycle) else {
                 continue;
             };
             if let Some(day) = evaluation.trigger_day {
-                triggered_timed_rules.push((rule.id, day));
+                plan.triggered_timed_rules.push((rule.id, day));
             }
             for device_id in target_device_ids {
                 if plugs.contains_key(&device_id) {
-                    device_evaluations.insert(device_id, (evaluation.turn_on, rule.name.clone()));
+                    plan.device_evaluations
+                        .insert(device_id, (evaluation.turn_on, rule.name.clone()));
                 }
             }
         }
+        Ok(plan)
+    }
 
+    async fn apply_plan(
+        &self,
+        client: &SmartHomeClient,
+        plugs: &HashMap<String, SmartPlug>,
+        plan: EvaluationPlan,
+    ) -> Result<()> {
+        let EvaluationPlan {
+            device_evaluations,
+            triggered_timed_rules,
+        } = plan;
         for (device_id, (turn_on, rule_name)) in device_evaluations {
             let plug = &plugs[&device_id];
             if plug.relay_on == turn_on {
@@ -625,7 +756,7 @@ impl WeatherSnapshot {
             sunrise: local_time(self.sunrise, self.utc_offset_seconds),
             sunset: local_time(self.sunset, self.utc_offset_seconds),
             previous_day_light: self.previous_day_light.clone(),
-            current_day: local_day(self),
+            current_day: local_day(self.time, self.utc_offset_seconds),
             solar_days: self.solar_days.clone(),
         }
     }
@@ -641,26 +772,43 @@ struct RuleEvaluation {
     trigger_day: Option<i64>,
 }
 
-fn evaluate_rule(rule: &AutomationRule, weather: &WeatherSnapshot) -> Option<RuleEvaluation> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EvaluationCycle {
+    Weather,
+    Timed,
+}
+
+#[derive(Default)]
+struct EvaluationPlan {
+    device_evaluations: HashMap<String, (bool, String)>,
+    triggered_timed_rules: Vec<(u64, i64)>,
+}
+
+fn evaluate_rule(
+    rule: &AutomationRule,
+    weather: &WeatherSnapshot,
+    current_time: i64,
+    cycle: EvaluationCycle,
+) -> Option<RuleEvaluation> {
     match rule.trigger {
         AutomationTrigger::FixedTime {
             minute_of_day,
             weekdays,
         } => {
-            let day = local_day(weather);
+            let day = local_day(current_time, weather.utc_offset_seconds);
             if rule.last_solar_day == Some(day) || !weekdays[local_weekday(day)] {
                 return None;
             }
-            let local_seconds = local_seconds(weather);
-            let event_time = weather.time - local_seconds + i64::from(minute_of_day) * 60;
-            timed_rule_evaluation(rule, weather.time, event_time, day)
+            let local_seconds = local_seconds(current_time, weather.utc_offset_seconds);
+            let event_time = current_time - local_seconds + i64::from(minute_of_day) * 60;
+            timed_rule_evaluation(rule, current_time, event_time, day)
         }
         AutomationTrigger::Solar {
             event,
             offset_minutes,
             weekdays,
         } => {
-            let day = local_day(weather);
+            let day = local_day(current_time, weather.utc_offset_seconds);
             if rule.last_solar_day == Some(day) || !weekdays[local_weekday(day)] {
                 return None;
             }
@@ -668,15 +816,18 @@ fn evaluate_rule(rule: &AutomationRule, weather: &WeatherSnapshot) -> Option<Rul
                 SolarEvent::Sunrise => weather.sunrise,
                 SolarEvent::Sunset => weather.sunset,
             } + i64::from(offset_minutes) * 60;
-            timed_rule_evaluation(rule, weather.time, event_time, day)
+            timed_rule_evaluation(rule, current_time, event_time, day)
         }
         AutomationTrigger::LightLevel {
             on_below,
             off_above,
             active_window,
         } => {
+            if cycle == EvaluationCycle::Timed {
+                return None;
+            }
             if let Some(window) = active_window {
-                if !window_contains(window, weather) {
+                if !window_contains(window, weather, current_time) {
                     return match window.outside {
                         OutsideWindowBehavior::TurnOff => Some(RuleEvaluation {
                             turn_on: false,
@@ -714,22 +865,22 @@ fn timed_rule_evaluation(
         })
 }
 
-fn local_seconds(weather: &WeatherSnapshot) -> i64 {
-    (weather.time + i64::from(weather.utc_offset_seconds)).rem_euclid(24 * 60 * 60)
+fn local_seconds(timestamp: i64, utc_offset_seconds: i32) -> i64 {
+    (timestamp + i64::from(utc_offset_seconds)).rem_euclid(24 * 60 * 60)
 }
 
-fn local_day(weather: &WeatherSnapshot) -> i64 {
-    (weather.time + i64::from(weather.utc_offset_seconds)).div_euclid(24 * 60 * 60)
+fn local_day(timestamp: i64, utc_offset_seconds: i32) -> i64 {
+    (timestamp + i64::from(utc_offset_seconds)).div_euclid(24 * 60 * 60)
 }
 
 fn local_weekday(day: i64) -> usize {
     (day + 4).rem_euclid(7) as usize
 }
 
-fn window_contains(window: ActiveWindow, weather: &WeatherSnapshot) -> bool {
+fn window_contains(window: ActiveWindow, weather: &WeatherSnapshot, current_time: i64) -> bool {
     const DAY_SECONDS: i64 = 24 * 60 * 60;
 
-    let current = local_seconds(weather);
+    let current = local_seconds(current_time, weather.utc_offset_seconds);
     let boundary_seconds = |boundary| match boundary {
         TimeBoundary::Fixed { minute_of_day } => i64::from(minute_of_day) * 60,
         TimeBoundary::Solar {
@@ -973,14 +1124,17 @@ mod tests {
         };
 
         assert_eq!(
-            evaluate_rule(&rule, &weather(2_700, 0.0)),
+            evaluate_rule(&rule, &weather(2_700, 0.0), 2_700, EvaluationCycle::Timed,),
             Some(RuleEvaluation {
                 turn_on: true,
                 trigger_day: Some(0),
             })
         );
         rule.last_solar_day = Some(0);
-        assert_eq!(evaluate_rule(&rule, &weather(2_700, 0.0)), None);
+        assert_eq!(
+            evaluate_rule(&rule, &weather(2_700, 0.0), 2_700, EvaluationCycle::Timed,),
+            None
+        );
     }
 
     #[test]
@@ -1001,14 +1155,42 @@ mod tests {
         conditions.utc_offset_seconds = -4 * 3_600;
 
         assert_eq!(
-            evaluate_rule(&rule, &conditions),
+            evaluate_rule(&rule, &conditions, conditions.time, EvaluationCycle::Timed,),
             Some(RuleEvaluation {
                 turn_on: true,
                 trigger_day: Some(0),
             })
         );
         rule.last_solar_day = Some(0);
-        assert_eq!(evaluate_rule(&rule, &conditions), None);
+        assert_eq!(
+            evaluate_rule(&rule, &conditions, conditions.time, EvaluationCycle::Timed,),
+            None
+        );
+    }
+
+    #[test]
+    fn fixed_time_rule_uses_current_time_with_cached_weather() {
+        let rule = AutomationRule {
+            id: 1,
+            device_id: "plug".to_owned(),
+            name: "Morning".to_owned(),
+            enabled: true,
+            trigger: AutomationTrigger::FixedTime {
+                minute_of_day: 9 * 60,
+                weekdays: [false, false, false, false, true, false, false],
+            },
+            turn_on: true,
+            last_solar_day: None,
+        };
+        let cached_weather = weather(8 * 3_600 + 58 * 60, 0.0);
+
+        assert_eq!(
+            evaluate_rule(&rule, &cached_weather, 9 * 3_600, EvaluationCycle::Timed,),
+            Some(RuleEvaluation {
+                turn_on: true,
+                trigger_day: Some(0),
+            })
+        );
     }
 
     #[test]
@@ -1027,9 +1209,24 @@ mod tests {
             last_solar_day: None,
         };
 
-        assert!(evaluate_rule(&rule, &weather(0, 50.0)).unwrap().turn_on);
-        assert_eq!(evaluate_rule(&rule, &weather(0, 100.0)), None);
-        assert!(!evaluate_rule(&rule, &weather(0, 150.0)).unwrap().turn_on);
+        assert!(
+            evaluate_rule(&rule, &weather(0, 50.0), 0, EvaluationCycle::Weather)
+                .unwrap()
+                .turn_on
+        );
+        assert_eq!(
+            evaluate_rule(&rule, &weather(0, 100.0), 0, EvaluationCycle::Weather),
+            None
+        );
+        assert!(
+            !evaluate_rule(&rule, &weather(0, 150.0), 0, EvaluationCycle::Weather)
+                .unwrap()
+                .turn_on
+        );
+        assert_eq!(
+            evaluate_rule(&rule, &weather(0, 50.0), 0, EvaluationCycle::Timed),
+            None
+        );
     }
 
     #[test]
@@ -1061,13 +1258,40 @@ mod tests {
         conditions.utc_offset_seconds = -4 * 3_600;
         conditions.sunrise = 10 * 3_600;
         conditions.sunset = 23 * 3_600;
-        assert!(evaluate_rule(&rule, &conditions).unwrap().turn_on);
+        assert!(
+            evaluate_rule(
+                &rule,
+                &conditions,
+                conditions.time,
+                EvaluationCycle::Weather,
+            )
+            .unwrap()
+            .turn_on
+        );
 
         conditions.time = 23 * 3_600;
-        assert!(!evaluate_rule(&rule, &conditions).unwrap().turn_on);
+        assert!(
+            !evaluate_rule(
+                &rule,
+                &conditions,
+                conditions.time,
+                EvaluationCycle::Weather,
+            )
+            .unwrap()
+            .turn_on
+        );
 
         conditions.time = 12 * 3_600 + 59 * 60;
-        assert!(!evaluate_rule(&rule, &conditions).unwrap().turn_on);
+        assert!(
+            !evaluate_rule(
+                &rule,
+                &conditions,
+                conditions.time,
+                EvaluationCycle::Weather,
+            )
+            .unwrap()
+            .turn_on
+        );
     }
 
     #[test]
@@ -1094,7 +1318,15 @@ mod tests {
             last_solar_day: None,
         };
 
-        assert_eq!(evaluate_rule(&rule, &weather(8 * 3_600, 50.0)), None);
+        assert_eq!(
+            evaluate_rule(
+                &rule,
+                &weather(8 * 3_600, 50.0),
+                8 * 3_600,
+                EvaluationCycle::Weather,
+            ),
+            None
+        );
     }
 
     #[test]
@@ -1109,9 +1341,17 @@ mod tests {
             outside: OutsideWindowBehavior::TurnOff,
         };
 
-        assert!(window_contains(window, &weather(23 * 3_600, 0.0)));
-        assert!(window_contains(window, &weather(3_600, 0.0)));
-        assert!(!window_contains(window, &weather(12 * 3_600, 0.0)));
+        assert!(window_contains(
+            window,
+            &weather(23 * 3_600, 0.0),
+            23 * 3_600,
+        ));
+        assert!(window_contains(window, &weather(3_600, 0.0), 3_600,));
+        assert!(!window_contains(
+            window,
+            &weather(12 * 3_600, 0.0),
+            12 * 3_600,
+        ));
     }
 
     #[test]
