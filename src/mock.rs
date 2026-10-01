@@ -65,22 +65,22 @@ fn mock_outlet(
     relay_on: bool,
     brightness: Option<u8>,
 ) -> Outlet {
-    let schedule_rules = (octet == 4)
-        .then(|| {
-            vec![json!({
-                "id": "mock-schedule-1",
-                "name": "Patio at sunset",
-                "enable": 1,
-                "repeat": 1,
-                "wday": [1, 1, 1, 1, 1, 1, 1],
-                "stime_opt": 2,
-                "smin": 0,
-                "sact": 1,
-                "etime_opt": -1,
-                "soffset": -15
-            })]
-        })
-        .unwrap_or_default();
+    let schedule_rules = if octet == 4 {
+        vec![json!({
+            "id": "mock-schedule-1",
+            "name": "Patio at sunset",
+            "enable": 1,
+            "repeat": 1,
+            "wday": [1, 1, 1, 1, 1, 1, 1],
+            "stime_opt": 2,
+            "smin": 0,
+            "sact": 1,
+            "etime_opt": -1,
+            "soffset": -15
+        })]
+    } else {
+        Vec::new()
+    };
     Outlet {
         plug: SmartPlug {
             address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, octet)),

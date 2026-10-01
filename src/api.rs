@@ -1088,7 +1088,7 @@ fn decode_token(value: &str) -> Option<[u8; 32]> {
         return None;
     }
     let mut token = [0; 32];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         token[index] = (hex(pair[0])? << 4) | hex(pair[1])?;
     }
     Some(token)
