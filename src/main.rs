@@ -1055,7 +1055,7 @@ async fn get_automations(
     State(state): State<Arc<AppState>>,
     Path(address): Path<IpAddr>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     let panel = load_automation_panel(&state, &plug).await?;
     render_automation_panel(&state, &panel)
 }
@@ -1065,7 +1065,7 @@ async fn create_fixed_automation(
     Path(address): Path<IpAddr>,
     Form(form): Form<ScheduleForm>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     require_location(&plug)?;
     let automation = fixed_automation(form, plug.device_id.clone())?;
     state
@@ -1081,7 +1081,7 @@ async fn create_solar_automation(
     Path(address): Path<IpAddr>,
     Form(form): Form<SolarAutomationForm>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     require_location(&plug)?;
     let automation = solar_automation(form, plug.device_id.clone())?;
     state
@@ -1097,7 +1097,7 @@ async fn create_light_automation(
     Path(address): Path<IpAddr>,
     Form(form): Form<LightAutomationForm>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     require_location(&plug)?;
     let automation = light_automation(form, plug.device_id.clone())?;
     state
@@ -1113,7 +1113,7 @@ async fn update_fixed_automation(
     Path((address, id)): Path<(IpAddr, u64)>,
     Form(form): Form<ScheduleForm>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     let automation = fixed_automation(form, plug.device_id.clone())?;
     update_automation(&state, &plug, id, automation).await
 }
@@ -1123,7 +1123,7 @@ async fn update_solar_automation(
     Path((address, id)): Path<(IpAddr, u64)>,
     Form(form): Form<SolarAutomationForm>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     let automation = solar_automation(form, plug.device_id.clone())?;
     update_automation(&state, &plug, id, automation).await
 }
@@ -1133,7 +1133,7 @@ async fn update_light_automation(
     Path((address, id)): Path<(IpAddr, u64)>,
     Form(form): Form<LightAutomationForm>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     let automation = light_automation(form, plug.device_id.clone())?;
     update_automation(&state, &plug, id, automation).await
 }
@@ -1162,7 +1162,7 @@ async fn set_automation_enabled(
     Path((address, id)): Path<(IpAddr, u64)>,
     Form(form): Form<RelayForm>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     let updated = state
         .automations
         .set_enabled(&plug.device_id, id, form.on)
@@ -1180,7 +1180,7 @@ async fn migrate_plug_schedules(
     State(state): State<Arc<AppState>>,
     Path(address): Path<IpAddr>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     require_location(&plug)?;
     let client = state.client.clone();
     let automations = state.automations.clone();
@@ -1216,7 +1216,7 @@ async fn delete_automation(
     State(state): State<Arc<AppState>>,
     Path((address, id)): Path<(IpAddr, u64)>,
 ) -> Result<Html<String>, AppError> {
-    let plug = get_plug(state.client.clone(), address).await?;
+    let plug = get_plug(&state, address).await?;
     let deleted = state
         .automations
         .delete(&plug.device_id, id)
@@ -1507,8 +1507,13 @@ fn parse_device_subnet(value: &str) -> io::Result<Vec<IpAddr>> {
         .collect())
 }
 
-async fn get_plug(client: SmartHomeClient, address: IpAddr) -> Result<SmartPlug, AppError> {
-    Ok(task::spawn_blocking(move || client.get_sysinfo(address)).await??)
+async fn get_plug(state: &AppState, address: IpAddr) -> Result<SmartPlug, AppError> {
+    let client = state.client.clone();
+    let plug = task::spawn_blocking(move || client.get_sysinfo(address)).await??;
+    state
+        .automations
+        .resolve_location(plug)
+        .map_err(automation_error)
 }
 
 fn solar_automation(
@@ -1847,6 +1852,10 @@ fn group_location_plug(
     group: &DeviceGroup,
 ) -> Result<Option<SmartPlug>, AppError> {
     let inventory: HashMap<_, _> = remembered_plugs(state)?
+        .into_iter()
+        .map(|plug| state.automations.resolve_location(plug))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(automation_error)?
         .into_iter()
         .map(|plug| (plug.device_id.clone(), plug))
         .collect();
@@ -3715,6 +3724,56 @@ mod tests {
         assert!(fragment.contains("hx-post=\"/plugs/192.0.2.1/automations/migrate\""));
         assert!(fragment.contains("Migrate 1 compatible schedule"));
         assert!(!fragment.contains("hx-delete=\"/plugs/192.0.2.1/automations/7\""));
+    }
+
+    #[test]
+    fn saved_schedules_remain_manageable_without_weather_or_location() {
+        for base in ["/plugs/192.0.2.1/automations", "/groups/3/automations"] {
+            for location_available in [true, false] {
+                let panel = AutomationPanel {
+                    address: "Outdoor lights".to_owned(),
+                    automation_base: base.to_owned(),
+                    location_available,
+                    weather: None,
+                    calendar: None,
+                    rules: vec![automation_view(AutomationRule {
+                        id: 31,
+                        device_id: "outdoor".to_owned(),
+                        name: "Night <off>".to_owned(),
+                        enabled: false,
+                        trigger: AutomationTrigger::FixedTime {
+                            minute_of_day: 22 * 60,
+                            weekdays: [true; 7],
+                        },
+                        turn_on: false,
+                        last_solar_day: None,
+                    })],
+                    schedules: SchedulePanel {
+                        migratable_count: 0,
+                        unsupported_count: 0,
+                        rules: Vec::new(),
+                    },
+                };
+                let fragment = render(AutomationPanelTemplate { panel: &panel });
+                assert!(fragment.contains("Calendar unavailable"));
+                assert!(fragment.contains("<h3>Saved schedules</h3>"));
+                assert!(fragment.contains("class=\"calendar-editor-store\">"));
+                assert!(fragment.contains("<summary>Night &lt;off&gt; · Disabled</summary>"));
+                assert!(fragment.contains("10:00 PM · Turn off · Every day"));
+                assert!(fragment.contains(&format!("hx-post=\"{base}/31/fixed\"")));
+                assert!(fragment.contains(&format!("hx-post=\"{base}/31/enabled\"")));
+                assert!(fragment.contains("name=\"on\" value=\"true\">Enable schedule"));
+                assert!(fragment.contains(&format!("hx-delete=\"{base}/31\"")));
+                assert_eq!(
+                    fragment.contains("Weather could not be loaded."),
+                    location_available
+                );
+                assert_eq!(
+                    fragment.contains("No valid location is available."),
+                    !location_available
+                );
+            }
+        }
     }
 
     #[test]

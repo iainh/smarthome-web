@@ -1028,10 +1028,20 @@ fn smart_plug(info: SysInfo, address: IpAddr) -> Option<SmartPlug> {
     }
     let latitude = info
         .latitude
-        .or_else(|| info.latitude_i.map(|value| f64::from(value) / 10_000.0));
+        .filter(|value| (-90.0..=90.0).contains(value))
+        .or_else(|| {
+            info.latitude_i
+                .map(|value| f64::from(value) / 10_000.0)
+                .filter(|value| (-90.0..=90.0).contains(value))
+        });
     let longitude = info
         .longitude
-        .or_else(|| info.longitude_i.map(|value| f64::from(value) / 10_000.0));
+        .filter(|value| (-180.0..=180.0).contains(value))
+        .or_else(|| {
+            info.longitude_i
+                .map(|value| f64::from(value) / 10_000.0)
+                .filter(|value| (-180.0..=180.0).contains(value))
+        });
 
     Some(SmartPlug {
         address,
@@ -1254,6 +1264,48 @@ mod tests {
                 longitude: Some(-81.0171),
             })
         );
+    }
+
+    #[test]
+    fn sysinfo_rejects_invalid_coordinates_and_uses_valid_scaled_fields() {
+        for (coordinates, expected) in [
+            (
+                json!({"latitude_i": -1879048193, "longitude_i": -1879048193}),
+                (None, None),
+            ),
+            (
+                json!({"latitude": -90.0, "longitude": 180.0}),
+                (Some(-90.0), Some(180.0)),
+            ),
+            (
+                json!({"latitude": 90.0, "longitude": -180.0}),
+                (Some(90.0), Some(-180.0)),
+            ),
+            (
+                json!({"latitude": 90.0001, "longitude": -180.0001}),
+                (None, None),
+            ),
+            (
+                json!({"latitude": -90.0001, "longitude": 180.0001}),
+                (None, None),
+            ),
+            (
+                json!({"latitude": -187904.8193, "longitude": -187904.8193,
+                "latitude_i": 464106, "longitude_i": -810171}),
+                (Some(46.4106), Some(-81.0171)),
+            ),
+        ] {
+            let mut info = json!({
+                "model": "KP405(US)", "alias": "Outdoor lights", "deviceId": "outdoor",
+                "sw_ver": "1.0.6", "relay_state": 1, "brightness": 100, "err_code": 0
+            });
+            info.as_object_mut()
+                .unwrap()
+                .extend(coordinates.as_object().unwrap().clone());
+            let plug = parse_sysinfo(info, "192.0.2.1".parse().unwrap()).unwrap();
+            assert_eq!((plug.latitude, plug.longitude), expected, "{coordinates}");
+            assert_eq!(plug.brightness, Some(100));
+        }
     }
 
     #[test]

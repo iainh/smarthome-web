@@ -83,10 +83,29 @@
     </section>
   {/if}
 
-  <div class="calendar-editor-store" hidden>
+  {#if !panel.calendar}
+    <section class="ui warning message" role="status">
+      <strong>Calendar unavailable</strong>
+      <p>{#if panel.location_available}Weather could not be loaded.{#else}No valid location is available. Configure a location in the Kasa app, or use the shared location of your other remembered devices.{/if} Your saved schedules are still listed below.</p>
+    </section>
+    <h3>Saved schedules</h3>
+    {#if !panel.rules}
+      <p class="schedule-status">No saved schedules yet.</p>
+    {/if}
+  {/if}
+  <div class="calendar-editor-store"{#if panel.calendar} hidden{/if}>
     {#for rule in panel.rules}
       <details class="schedule-editor" id="schedule-editor-{rule.id}">
-        <summary>Edit schedule</summary>
+        <summary>{#if panel.calendar}Edit schedule{#else}{rule.name} · {#if rule.enabled}Enabled{#else}Disabled{/if}{/if}</summary>
+        {#if !panel.calendar}
+          <p>{rule.description}</p>
+          <div class="calendar-selection-actions">
+            <form hx-post="{panel.automation_base}/{rule.id}/enabled" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
+              <button class="ui mini button small-button" type="submit" name="on" value="{#if rule.enabled}false{#else}true{/if}">{#if rule.enabled}Disable{#else}Enable{/if} schedule</button>
+            </form>
+            <button class="ui mini negative button small-button danger" type="button" hx-delete="{panel.automation_base}/{rule.id}" hx-target="closest .device-pane" hx-swap="outerHTML" hx-confirm="Delete this schedule?" hx-disable="this">Delete schedule</button>
+          </div>
+        {/if}
         {#if rule.kind == "fixed"}
           <form class="ui form schedule-form" hx-post="{panel.automation_base}/{rule.id}/fixed" hx-target="closest .device-pane" hx-swap="outerHTML" hx-disable="find button">
             <div class="field"><label for="fixed-name-{rule.id}">Name</label><input id="fixed-name-{rule.id}" name="name" maxlength="64" required value="{rule.name}"></div>

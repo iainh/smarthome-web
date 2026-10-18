@@ -240,8 +240,28 @@ impl AutomationEngine {
         })
     }
 
+    /// Uses the home's shared location only when every valid inventory location agrees.
+    /// The fallback is not written to the plug or remembered as its own location.
+    pub fn resolve_location(&self, mut plug: SmartPlug) -> Result<SmartPlug> {
+        if Coordinate::from_plug(&plug).is_some() {
+            return Ok(plug);
+        }
+        plug.latitude = None;
+        plug.longitude = None;
+        let devices = self.database.devices()?;
+        let mut locations = devices.iter().filter_map(Coordinate::from_plug);
+        if let Some(home) = locations.next() {
+            if locations.all(|location| location == home) {
+                plug.latitude = Some(home.latitude());
+                plug.longitude = Some(home.longitude());
+            }
+        }
+        Ok(plug)
+    }
+
     pub async fn weather_status(&self, plug: &SmartPlug) -> Result<WeatherStatus> {
-        let coordinate = Coordinate::from_plug(plug).ok_or_else(|| {
+        let plug = self.resolve_location(plug.clone())?;
+        let coordinate = Coordinate::from_plug(&plug).ok_or_else(|| {
             Box::new(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "plug does not have location coordinates",
@@ -365,6 +385,9 @@ impl AutomationEngine {
             .database
             .devices()?
             .into_iter()
+            .map(|plug| self.resolve_location(plug))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
             .map(|plug| (plug.device_id.clone(), plug))
             .collect();
         let now = unix_timestamp()?;
@@ -405,7 +428,10 @@ impl AutomationEngine {
         })
         .await??;
         self.database.remember_devices(&plugs)?;
-        Ok(plugs)
+        plugs
+            .into_iter()
+            .map(|plug| self.resolve_location(plug))
+            .collect()
     }
 
     fn evaluation_plan(
@@ -619,9 +645,14 @@ struct Coordinate {
 
 impl Coordinate {
     fn from_plug(plug: &SmartPlug) -> Option<Self> {
+        let latitude = plug.latitude?;
+        let longitude = plug.longitude?;
+        if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
+            return None;
+        }
         Some(Self {
-            latitude: (plug.latitude? * 10_000.0).round() as i32,
-            longitude: (plug.longitude? * 10_000.0).round() as i32,
+            latitude: (latitude * 10_000.0).round() as i32,
+            longitude: (longitude * 10_000.0).round() as i32,
         })
     }
 
@@ -1078,6 +1109,58 @@ mod tests {
         assert_eq!(format_clock_time(11, 5), "11:05 AM");
         assert_eq!(format_clock_time(12, 0), "12:00 PM");
         assert_eq!(format_clock_time(23, 59), "11:59 PM");
+    }
+
+    #[test]
+    fn invalid_location_uses_only_an_unambiguous_home_without_persisting_it() {
+        let database = Arc::new(Database::open(":memory:").unwrap());
+        let engine = AutomationEngine::new(database.clone()).unwrap();
+        let outdoor = SmartPlug {
+            address: "192.0.2.1".parse().unwrap(),
+            model: "KP405(US)".to_owned(),
+            alias: "Outdoor lights".to_owned(),
+            device_id: "outdoor".to_owned(),
+            software_version: "1.0.6".to_owned(),
+            relay_on: true,
+            brightness: Some(100),
+            latitude: Some(-187904.8193),
+            longitude: Some(-187904.8193),
+        };
+        let unresolved = engine.resolve_location(outdoor.clone()).unwrap();
+        assert_eq!((unresolved.latitude, unresolved.longitude), (None, None));
+
+        let mut home = outdoor.clone();
+        home.device_id = "home".to_owned();
+        home.latitude = Some(46.4106);
+        home.longitude = Some(-81.0171);
+        let mut other_home_plug = home.clone();
+        other_home_plug.device_id = "other-home-plug".to_owned();
+        database
+            .remember_devices(&[outdoor.clone(), home.clone(), other_home_plug.clone()])
+            .unwrap();
+        let resolved = engine.resolve_location(outdoor.clone()).unwrap();
+        assert_eq!(
+            (resolved.latitude, resolved.longitude),
+            (Some(46.4106), Some(-81.0171))
+        );
+        assert_eq!(
+            database
+                .devices()
+                .unwrap()
+                .into_iter()
+                .find(|plug| plug.device_id == "outdoor")
+                .unwrap(),
+            outdoor
+        );
+
+        other_home_plug.latitude = Some(0.0);
+        other_home_plug.longitude = Some(120.0);
+        database
+            .remember_devices(&[other_home_plug.clone()])
+            .unwrap();
+        assert_eq!(engine.resolve_location(home.clone()).unwrap(), home);
+        let unresolved = engine.resolve_location(outdoor).unwrap();
+        assert_eq!((unresolved.latitude, unresolved.longitude), (None, None));
     }
 
     #[test]
